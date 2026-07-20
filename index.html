@@ -4,6 +4,16 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
 <title>Coach Pompes IA</title>
+
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<link rel="icon" href="icons/icon-192.png" />
+<meta name="theme-color" content="#0a0a0a" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Pompes IA" />
+
 <style>
   :root {
     color-scheme: dark;
@@ -14,7 +24,7 @@
     padding: 0;
     width: 100%;
     height: 100%;
-    background: #000;
+    background: #0a0a0a;
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     overscroll-behavior: none;
@@ -25,35 +35,62 @@
     inset: 0;
     width: 100vw;
     height: 100dvh;
-    background: #000;
+    background: #0a0a0a;
   }
 
-  /* ---------- Ecran de démarrage ---------- */
-  #startScreen {
+  /* ---------- Ecran d'accueil ---------- */
+  #homeScreen {
     position: absolute;
     inset: 0;
     z-index: 20;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     gap: 22px;
-    padding: 24px;
+    padding: max(28px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)) 20px;
     text-align: center;
-    background: radial-gradient(circle at 50% 20%, #1a1a1a 0%, #000 70%);
+    background: radial-gradient(circle at 50% 0%, #161616 0%, #0a0a0a 65%);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
-  #startScreen h1 {
+  #homeScreen h1 {
     color: #fff;
-    font-size: 1.6rem;
+    font-size: 1.5rem;
+    margin: 4px 0 0 0;
+  }
+  #homeScreen .subtitle {
+    color: #777;
+    font-size: 0.8rem;
     margin: 0;
   }
-  #startScreen p {
-    color: #999;
-    font-size: 0.95rem;
-    max-width: 320px;
-    line-height: 1.4;
-    margin: 0;
+
+  .statsRow {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+    max-width: 380px;
   }
+  .statTile {
+    flex: 1;
+    background: #161616;
+    border: 1px solid #232323;
+    border-radius: 16px;
+    padding: 14px 6px;
+  }
+  .statTile .statValue {
+    color: #00e676;
+    font-size: 1.5rem;
+    font-weight: 800;
+    line-height: 1.1;
+  }
+  .statTile .statLabel {
+    color: #888;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+
   #startBtn {
     background: #00e676;
     color: #001a0a;
@@ -63,14 +100,97 @@
     font-size: 1.1rem;
     font-weight: 700;
     cursor: pointer;
-    box-shadow: 0 6px 24px rgba(0, 230, 118, 0.35);
+    box-shadow: 0 6px 24px rgba(0, 230, 118, 0.3);
+    width: 100%;
+    max-width: 320px;
   }
   #startBtn:active { transform: scale(0.97); }
+  #startBtn:disabled { opacity: 0.6; }
+
+  #homeScreen .tip {
+    color: #666;
+    font-size: 0.8rem;
+    max-width: 320px;
+    line-height: 1.4;
+    margin: 0;
+  }
+
   #errorBox {
     color: #ff5252;
     font-size: 0.85rem;
     max-width: 320px;
     display: none;
+  }
+
+  .historySection {
+    width: 100%;
+    max-width: 380px;
+    text-align: left;
+    margin-top: 4px;
+  }
+  .historySection h2 {
+    color: #999;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    margin: 0 0 10px 2px;
+  }
+  #historyList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .historyItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #141414;
+    border: 1px solid #212121;
+    border-radius: 12px;
+    padding: 10px 14px;
+  }
+  .historyItem .hDate {
+    color: #ccc;
+    font-size: 0.85rem;
+    text-transform: capitalize;
+  }
+  .historyItem .hMeta {
+    color: #666;
+    font-size: 0.7rem;
+    margin-top: 2px;
+  }
+  .historyItem .hReps {
+    color: #00e676;
+    font-weight: 800;
+    font-size: 1.1rem;
+  }
+  .emptyHistory {
+    color: #555;
+    font-size: 0.82rem;
+    padding: 10px 2px;
+  }
+
+  #toast {
+    position: absolute;
+    bottom: max(20px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(0, 230, 118, 0.92);
+    color: #001a0a;
+    font-weight: 700;
+    font-size: 0.85rem;
+    padding: 12px 20px;
+    border-radius: 999px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    z-index: 30;
+    white-space: nowrap;
+  }
+  #toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
   }
 
   /* ---------- Vue caméra ---------- */
@@ -129,6 +249,33 @@
     color: #aaa;
   }
 
+  #topRight {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    pointer-events: auto;
+  }
+
+  #endBtn {
+    background: rgba(211, 47, 47, 0.85);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 9px 16px;
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  #debugToggle {
+    background: rgba(20, 20, 20, 0.55);
+    color: #888;
+    border: none;
+    border-radius: 12px;
+    padding: 6px 10px;
+    font-size: 0.65rem;
+  }
+
   #debugBox {
     background: rgba(20, 20, 20, 0.55);
     backdrop-filter: blur(8px);
@@ -138,24 +285,10 @@
     color: #ccc;
     line-height: 1.5;
     min-width: 118px;
+    text-align: right;
     display: none;
-    pointer-events: auto;
   }
   #debugBox.visible { display: block; }
-
-  #debugToggle {
-    position: absolute;
-    top: max(14px, env(safe-area-inset-top));
-    right: 14px;
-    background: rgba(20,20,20,0.55);
-    color: #888;
-    border: none;
-    border-radius: 12px;
-    padding: 6px 10px;
-    font-size: 0.65rem;
-    pointer-events: auto;
-    z-index: 11;
-  }
 
   #messageBanner {
     align-self: center;
@@ -189,11 +322,33 @@
 <body>
 <div id="app">
 
-  <div id="startScreen">
+  <div id="homeScreen">
     <h1>💪 Coach Pompes IA</h1>
-    <p>Place ton iPhone contre un mur ou en appui, recule-toi pour que ton buste et tes jambes soient visibles de profil, puis lance la séance.</p>
+    <p class="subtitle">Vision par ordinateur en temps réel</p>
+
+    <div class="statsRow">
+      <div class="statTile">
+        <div class="statValue" id="statToday">0</div>
+        <div class="statLabel">Aujourd'hui</div>
+      </div>
+      <div class="statTile">
+        <div class="statValue" id="statTotal">0</div>
+        <div class="statLabel">Total</div>
+      </div>
+      <div class="statTile">
+        <div class="statValue" id="statStreak">0</div>
+        <div class="statLabel">Jours de suite</div>
+      </div>
+    </div>
+
     <button id="startBtn">Démarrer la séance</button>
+    <p class="tip">Place ton iPhone contre un mur ou en appui, recule-toi pour que ton buste et tes jambes soient visibles de profil.</p>
     <div id="errorBox"></div>
+
+    <div class="historySection">
+      <h2>Historique</h2>
+      <div id="historyList"></div>
+    </div>
   </div>
 
   <div id="videoWrap">
@@ -201,15 +356,17 @@
     <canvas id="output"></canvas>
   </div>
 
-  <button id="debugToggle" style="display:none;">Debug</button>
-
   <div id="hud" style="display:none;">
     <div id="topBar">
       <div id="counterBox">
         <div id="counter">0</div>
         <div id="counterLabel">Pompes</div>
       </div>
-      <div id="debugBox"></div>
+      <div id="topRight">
+        <button id="endBtn">Terminer</button>
+        <button id="debugToggle">Debug</button>
+        <div id="debugBox"></div>
+      </div>
     </div>
 
     <div>
@@ -217,6 +374,8 @@
       <div id="stagePill">Phase: HAUT</div>
     </div>
   </div>
+
+  <div id="toast"></div>
 
 </div>
 
@@ -244,8 +403,117 @@
     L_ANKLE: 27, R_ANKLE: 28
   };
 
+  // ============ HISTORIQUE (localStorage) ============
+  const HISTORY_KEY = "pushupCoach.history.v1";
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveHistory(history) {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch (e) {
+      console.warn("Impossible de sauvegarder l'historique", e);
+    }
+  }
+
+  function dateKey(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  function addSession(reps, durationSec) {
+    if (reps <= 0) return loadHistory();
+    const history = loadHistory();
+    history.push({
+      date: dateKey(new Date()),
+      timestamp: new Date().toISOString(),
+      reps,
+      durationSec: Math.round(durationSec)
+    });
+    saveHistory(history);
+    return history;
+  }
+
+  function computeStats(history) {
+    const today = dateKey(new Date());
+    let todayReps = 0;
+    let totalReps = 0;
+    const daysWithSessions = new Set();
+
+    for (const s of history) {
+      totalReps += s.reps;
+      daysWithSessions.add(s.date);
+      if (s.date === today) todayReps += s.reps;
+    }
+
+    let streak = 0;
+    const cursor = new Date();
+    while (daysWithSessions.has(dateKey(cursor))) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    return { todayReps, totalReps, totalSessions: history.length, streak };
+  }
+
+  function fmtDuration(sec) {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function fmtDate(dateStr) {
+    const d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  }
+
+  function renderHome() {
+    const history = loadHistory();
+    const stats = computeStats(history);
+
+    statToday.textContent = stats.todayReps;
+    statTotal.textContent = stats.totalReps;
+    statStreak.textContent = stats.streak;
+
+    if (history.length === 0) {
+      historyList.innerHTML = '<div class="emptyHistory">Aucune séance enregistrée pour l\'instant.</div>';
+      return;
+    }
+
+    const recent = history.slice().reverse().slice(0, 10);
+    historyList.innerHTML = recent
+      .map(
+        (s) => `
+        <div class="historyItem">
+          <div>
+            <div class="hDate">${fmtDate(s.date)}</div>
+            <div class="hMeta">${fmtDuration(s.durationSec)} min</div>
+          </div>
+          <div class="hReps">${s.reps}</div>
+        </div>`
+      )
+      .join("");
+  }
+
+  function showToast(text) {
+    toastEl.textContent = text;
+    toastEl.classList.add("visible");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => toastEl.classList.remove("visible"), 2600);
+  }
+
   // ============ ELEMENTS ============
-  const startScreen = document.getElementById("startScreen");
+  const homeScreen = document.getElementById("homeScreen");
   const startBtn = document.getElementById("startBtn");
   const errorBox = document.getElementById("errorBox");
   const videoWrap = document.getElementById("videoWrap");
@@ -258,6 +526,12 @@
   const stagePill = document.getElementById("stagePill");
   const debugBox = document.getElementById("debugBox");
   const debugToggle = document.getElementById("debugToggle");
+  const endBtn = document.getElementById("endBtn");
+  const toastEl = document.getElementById("toast");
+  const statToday = document.getElementById("statToday");
+  const statTotal = document.getElementById("statTotal");
+  const statStreak = document.getElementById("statStreak");
+  const historyList = document.getElementById("historyList");
 
   debugToggle.addEventListener("click", () => {
     debugBox.classList.toggle("visible");
@@ -272,16 +546,26 @@
   let repCount = 0;
   let stage = "up"; // "up" | "down"
   let formBrokenThisRep = false;
-  let lastMessageAt = 0;
+  let sessionActive = false;
+  let sessionStartedAt = 0;
 
   function setMessage(text, type) {
     messageBanner.textContent = text;
     messageBanner.className = type;
-    lastMessageAt = performance.now();
   }
 
   function setStagePill() {
     stagePill.textContent = "Phase: " + (stage === "up" ? "HAUT" : "BAS");
+  }
+
+  function resetSessionState() {
+    repCount = 0;
+    counterEl.textContent = "0";
+    stage = "up";
+    formBrokenThisRep = false;
+    canvasReady = false;
+    setMessage("Positionne-toi dans le cadre", "neutral");
+    setStagePill();
   }
 
   // ============ GEOMETRIE ============
@@ -369,6 +653,7 @@
   }
 
   pose.onResults((results) => {
+    if (!sessionActive) return;
     ensureCanvasSize();
     if (!canvasReady) return;
 
@@ -401,8 +686,7 @@
 
     debugBox.innerHTML =
       "Coude: " + elbowAngle.toFixed(0) + "°<br>" +
-      "Bassin: " + alignAngle.toFixed(0) + "°<br>" +
-      "Côté: " + (side === undefined ? "-" : "auto");
+      "Bassin: " + alignAngle.toFixed(0) + "°";
 
     evaluateRep(elbowAngle, alignOk);
 
@@ -421,13 +705,15 @@
         throw new Error("La librairie caméra MediaPipe n'a pas pu être chargée (vérifie ta connexion).");
       }
 
+      resetSessionState();
+
       videoWrap.style.display = "block";
       hud.style.display = "flex";
-      debugToggle.style.display = "block";
-      startScreen.style.display = "none";
+      homeScreen.style.display = "none";
 
       camera = new Camera(videoEl, {
         onFrame: async () => {
+          if (!sessionActive || document.hidden) return;
           await pose.send({ image: videoEl });
         },
         facingMode: "user",
@@ -436,8 +722,10 @@
       });
 
       await camera.start();
+      sessionActive = true;
+      sessionStartedAt = Date.now();
     } catch (err) {
-      startScreen.style.display = "flex";
+      homeScreen.style.display = "flex";
       videoWrap.style.display = "none";
       hud.style.display = "none";
       startBtn.disabled = false;
@@ -450,7 +738,55 @@
     }
   }
 
+  function stopCameraStream() {
+    try {
+      if (camera && typeof camera.stop === "function") camera.stop();
+    } catch (e) {
+      console.warn(e);
+    }
+    const stream = videoEl.srcObject;
+    if (stream && stream.getTracks) {
+      stream.getTracks().forEach((t) => t.stop());
+    }
+    videoEl.srcObject = null;
+    camera = null;
+    canvasReady = false;
+  }
+
+  function endSession() {
+    if (!sessionActive) return;
+    sessionActive = false;
+
+    const durationSec = (Date.now() - sessionStartedAt) / 1000;
+    const finishedReps = repCount;
+    stopCameraStream();
+
+    videoWrap.style.display = "none";
+    hud.style.display = "none";
+    debugBox.classList.remove("visible");
+    homeScreen.style.display = "flex";
+    startBtn.disabled = false;
+
+    addSession(finishedReps, durationSec);
+    renderHome();
+
+    if (finishedReps > 0) {
+      showToast(`Séance enregistrée : ${finishedReps} pompe${finishedReps > 1 ? "s" : ""} 💪`);
+    }
+  }
+
   startBtn.addEventListener("click", startSession);
+  endBtn.addEventListener("click", endSession);
+
+  // ============ PWA : service worker (app shell hors-ligne) ============
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW registration failed", e));
+    });
+  }
+
+  // ============ INIT ============
+  renderHome();
 })();
 </script>
 </body>
