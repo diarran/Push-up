@@ -1,17 +1,28 @@
 # BSE push up
 
-Tracker de pompes par vision par ordinateur (MediaPipe), avec coach vocal et
-classement de groupe. Concu pour un petit groupe ferme (une dizaine de
+Coach de musculation au poids de corps par vision par ordinateur
+(MediaPipe), avec ciblage musculaire 3D, generation de seance, coach vocal
+et classement de groupe. Concu pour un petit groupe ferme (une dizaine de
 personnes), pas pour un usage grand public.
+
+## Parcours utilisateur
+
+`gate` (mot de passe + pseudo) -> `home` (stats, historique) -> `targeting`
+(ciblage 3D des muscles a travailler) -> `workoutSetup` (analyse
+biomecanique, temps disponible, plan genere) -> `session` (enchainement des
+exercices, series, repos, coach vocal) -> retour a `home`.
 
 ## Architecture
 
 - **Build** : Vite (modules ES natifs, dev server rapide)
 - **Interface** : JavaScript vanilla, sans framework
 - **Vision par ordinateur** : `@mediapipe/tasks-vision` (`PoseLandmarker`),
-  l'API MediaPipe actuellement maintenue par Google (remplace les anciens
-  scripts CDN `pose.js` / `camera_utils` utilises dans les premieres
-  versions du prototype, aujourd'hui depreciees)
+  l'API MediaPipe actuellement maintenue par Google. Le moteur est
+  multi-exercices : voir "Moteur multi-exercices" ci-dessous
+- **Ciblage 3D** : Three.js, corps stylise en primitives (pas un maillage
+  anatomique reel, voir "Limites connues")
+- **Generation de seance** : algorithme deterministe base sur des regles
+  (pas de machine learning), voir "Generation de seance"
 - **Voix** : Web Speech API (`SpeechSynthesis`) native au navigateur, aucun
   service tiers, fonctionne hors ligne
 - **Backend** : Supabase (Postgres), deux tables (`utilisateurs`,
@@ -23,15 +34,56 @@ personnes), pas pour un usage grand public.
 
 ```
 src/
-  core/       geometrie, machine a etats du compteur, moteur de pose, camera
-  audio/      coach vocal (file d'attente, anti-spam, encouragements)
-  lib/        client Supabase
-  auth/       gestion locale du pseudo + verification du mot de passe de groupe
-  db/         acces direct aux tables Supabase (historique, classement)
-  ui/         ecrans (gate, home, session, leaderboard) et navigation
+  core/
+    exercises/    moteur multi-exercices (angleRepCounter, holdTimer,
+                  exerciseEngine, definitions pompes/squats/fentes/planche)
+    geometry.js, landmarks.js, poseEngine.js, cameraStream.js, date.js,
+    withTimeout.js
+  biomechanics/   taxonomie des muscles + regles d'equilibre (antagonistes)
+  workout/        generateur de seance (temps, muscles, niveau -> plan)
+  audio/          coach vocal (file d'attente, anti-spam, transitions, repos)
+  lib/            client Supabase
+  auth/           gestion locale du pseudo + verification du mot de passe
+  db/             acces direct aux tables Supabase (historique, classement)
+  ui/
+    threeBody/    scene et corps 3D (Three.js)
+    screens/      gate, home, targeting, workoutSetup, session, leaderboard
 supabase/migrations/0001_init.sql   schema complet (tables + policies)
 public/       manifest PWA, icones
 ```
+
+## Moteur multi-exercices
+
+Le moteur ne connait aucune logique specifique a un exercice : chaque
+exercice (`src/core/exercises/pushup.js`, `squat.js`, `lunge.js`,
+`plank.js`) declare ses propres points de repere (`points`), son calcul de
+metriques (`computeMetrics`), sa machine a etats (`createState`) et ses
+messages. Le moteur generique (`exerciseEngine.js`) applique cette
+definition aux landmarks detectes a chaque frame ; changer d'exercice en
+cours de seance revient simplement a instancier un nouveau moteur avec une
+autre definition (`session.js` le fait a chaque nouvelle serie).
+
+Deux machines a etats reutilisables :
+
+- `angleRepCounter.js` : exercices en repetitions, pilotes par un angle
+  articulaire principal (coude, genou) et un controle de forme optionnel.
+  Utilisee par pompes, squats, fentes.
+- `holdTimer.js` : exercices en maintien (planche), mesure le temps cumule
+  en bonne forme.
+
+## Generation de seance
+
+`src/workout/generator.js` prend la selection musculaire, le temps
+disponible et un niveau (`debutant`/`intermediaire`/`avance`, estime a
+partir de la moyenne des reps des 5 dernieres seances enregistrees) et
+produit une liste de blocs (exercice, series, repetitions ou secondes de
+maintien, repos), ajustee pour tenir dans le temps donne. Regles fixes,
+pas d'apprentissage automatique.
+
+`src/biomechanics/balanceRules.js` verifie, pour chaque muscle
+selectionne, si l'un de ses antagonistes declares (`muscleGroups.js`) est
+absent de la selection, et le cas echeant previent d'un risque de
+desequilibre et suggere de l'ajouter.
 
 ## Pourquoi pas de comptes individuels
 
@@ -97,16 +149,13 @@ Options rapides :
 Une fois deploye, ouvrir l'URL dans Safari puis Partager > Sur l'ecran
 d'accueil pour une installation en PWA sans barre d'adresse.
 
-## Reglages du moteur de detection
+## Reglages des exercices
 
-Les seuils sont centralises dans `src/core/repCounter.js`
-(`DEFAULT_REP_CONFIG`) :
-
-- `downAngle` (90 degres) : coude plie pour valider le bas du mouvement
-- `upAngle` (160 degres) : coude tendu pour valider le haut du mouvement
-  et compter la repetition
-- `alignAngle` (160 degres) : angle epaule-hanche-cheville minimum pour
-  considerer le dos droit
+Chaque fichier `src/core/exercises/*.js` centralise ses propres seuils
+(`downAngle`/`upAngle` pour les exercices en repetitions, angle
+d'alignement dans `computeMetrics`). Les preréglages de serie (nombre de
+series, repetitions, secondes de repos par niveau) sont dans
+`LEVEL_PRESETS` (`src/workout/generator.js`).
 
 ## Coach vocal
 
@@ -115,9 +164,33 @@ un anti-spam par cooldown independant pour chaque type d'alerte (5
 secondes), et des encouragements declenches uniquement pendant les temps
 morts (file vide, pas de parole en cours), toutes les 20 secondes au plus.
 Un bouton "Voix" dans l'ecran de seance permet de la couper a tout moment.
+Les transitions de seance (debut d'exercice, debut/fin de repos, exercice
+suivant, fin de seance) coupent la parole en cours : ce sont des
+changements de contexte nets qui doivent passer avant le reste.
 
 ## Limites connues
 
+- **Corps 3D stylise, pas anatomique** : le ciblage utilise des primitives
+  (capsules/boites) groupees par muscle, pas un maillage anatomique
+  segmente (ceux-ci sont generalement des assets proprietaires). Un vrai
+  maillage glTF segmente par muscle se brancherait au meme endroit
+  (`src/ui/threeBody/buildBody.js`) sans changer le reste de
+  l'architecture, qui ne depend que du nom de muscle attache a chaque
+  partie (`mesh.userData.muscleId`).
+- **Fentes simplifiees** : suivent l'angle du genou avant comme un squat,
+  sans distinguer jambe avant/arriere ni largeur de fente.
+- **Pas de test d'evaluation camera** : le niveau de depart est estime
+  uniquement a partir de l'historique enregistre (moyenne des 5 dernieres
+  seances). Un test devant la camera (ex. repetitions max en 30 secondes)
+  reste a construire pour les personnes sans historique.
+- **Colonne `repetitions` reutilisee pour les maintiens** : pour la
+  planche (exercice en secondes, pas en repetitions), la colonne
+  `repetitions` de la table `historique` stocke le nombre de secondes
+  tenues, faute d'une colonne dediee dans le schema minimal actuel.
+- **Classement en repetitions brutes toutes disciplines confondues** : le
+  total affiche additionne des repetitions et des secondes de maintien
+  sans distinction ; correct pour un classement simple entre amis, moins
+  pour comparer rigoureusement des seances tres differentes.
 - Le pseudo n'est pas normalise : deux saisies differentes (majuscules,
   espaces) creent deux entrees distinctes dans le classement. Chacun doit
   garder le meme pseudo.
@@ -127,7 +200,3 @@ Un bouton "Voix" dans l'ecran de seance permet de la couper a tout moment.
 - Pas de recuperation d'acces si le mot de passe de groupe change : il faut
   alors redemander a chacun de le ressaisir (bouton "Changer de pseudo ou
   de code" sur l'ecran d'accueil).
-- Seul l'exercice "Pompes" est enregistre pour l'instant ; les colonnes
-  `nom_exercice` et `muscles_travailles` existent en base avec des valeurs
-  fixes, prêtes pour un futur choix d'exercice sans migration
-  supplementaire.

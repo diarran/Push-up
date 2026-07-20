@@ -20,3 +20,23 @@ export function sessionEndLine(totalReps) {
   const word = totalReps > 1 ? "repetitions" : "repetition";
   return `Serie terminee. ${totalReps} ${word}.`;
 }
+
+export function exerciseIntroLine(label, setIndex, totalSets) {
+  return `${label}. Serie ${setIndex} sur ${totalSets}.`;
+}
+
+export function restStartLine(seconds) {
+  return `Repos, ${seconds} secondes.`;
+}
+
+export const REST_END_LINE = "Repos termine, en position.";
+
+export function nextExerciseLine(label) {
+  return `Prochain exercice : ${label}.`;
+}
+
+export function workoutCompleteLine(exerciseCount) {
+  if (exerciseCount <= 0) return "Seance terminee.";
+  const word = exerciseCount > 1 ? "exercices" : "exercice";
+  return `Seance terminee. ${exerciseCount} ${word} au programme, bravo.`;
+}

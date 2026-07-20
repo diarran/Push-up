@@ -1,16 +1,22 @@
 import { PoseLandmarker, DrawingUtils } from "../../core/poseEngine.js";
 import { startCameraStream, stopCameraStream } from "../../core/cameraStream.js";
-import { createRepCounter } from "../../core/repCounter.js";
-import { pickSide } from "../../core/landmarks.js";
-import { angleAt, areVisible } from "../../core/geometry.js";
-import { submitSession } from "../../db/historique.js";
+import { createExerciseEngine } from "../../core/exercises/exerciseEngine.js";
+import { getExercise } from "../../core/exercises/index.js";
+import { submitWorkoutResults } from "../../db/historique.js";
+import { withTimeout } from "../../core/withTimeout.js";
+import { muscleLabel } from "../../biomechanics/muscleGroups.js";
 
-const VIS_THRESHOLD = 0.55;
-const ALIGN_ANGLE = 160;
+const SUBMIT_TIMEOUT_MS = 6000;
 
 export function renderSessionScreen(root, ctx) {
   const username = ctx.getUsername();
   const voiceCoach = ctx.voiceCoach;
+  const plan = ctx.getWorkoutPlan();
+
+  if (!plan || plan.length === 0) {
+    ctx.navigate("home");
+    return () => {};
+  }
 
   const el = document.createElement("div");
   el.className = "screen sessionScreen";
@@ -20,8 +26,9 @@ export function renderSessionScreen(root, ctx) {
     <div class="hud">
       <div class="topBar">
         <div class="counterBox">
+          <div class="exerciseLabel" id="exerciseLabel"></div>
           <div class="counter" id="counter">0</div>
-          <div class="counterLabel">Repetitions</div>
+          <div class="counterLabel" id="counterLabel">Repetitions</div>
         </div>
         <div class="topRight">
           <button id="endBtn" class="dangerPill">Terminer</button>
@@ -32,8 +39,13 @@ export function renderSessionScreen(root, ctx) {
       </div>
       <div class="bottomArea">
         <div id="messageBanner" class="messageBanner neutral">Chargement du modele</div>
-        <div id="stagePill" class="stagePill">Phase : haut</div>
+        <div id="stagePill" class="stagePill"></div>
       </div>
+    </div>
+    <div id="restOverlay" class="restOverlay" hidden>
+      <div class="restLabel">Repos</div>
+      <div class="restCountdown" id="restCountdown">0</div>
+      <div class="restNext" id="restNext"></div>
     </div>
   `;
   root.appendChild(el);
@@ -41,30 +53,50 @@ export function renderSessionScreen(root, ctx) {
   const video = el.querySelector("#video");
   const canvas = el.querySelector("#output");
   const ctx2d = canvas.getContext("2d");
+  const exerciseLabelEl = el.querySelector("#exerciseLabel");
   const counterEl = el.querySelector("#counter");
+  const counterLabelEl = el.querySelector("#counterLabel");
   const messageBanner = el.querySelector("#messageBanner");
   const stagePill = el.querySelector("#stagePill");
   const debugBox = el.querySelector("#debugBox");
   const debugToggle = el.querySelector("#debugToggle");
   const endBtn = el.querySelector("#endBtn");
   const voiceToggle = el.querySelector("#voiceToggle");
+  const restOverlay = el.querySelector("#restOverlay");
+  const restCountdown = el.querySelector("#restCountdown");
+  const restNext = el.querySelector("#restNext");
 
-  const repCounter = createRepCounter();
   let landmarker = null;
   let drawingUtils = null;
-  let active = false;
+  let cameraActive = false;
   let canvasReady = false;
   let lastVideoTime = -1;
   let rafId = null;
+  let restIntervalId = null;
   let ended = false;
+
+  let blockIndex = 0;
+  let setIndex = 0;
+  let phase = "loading"; // "loading" | "working" | "resting" | "finished"
+  let engine = null;
+  const resultsByExercise = new Map();
+
+  function currentBlock() {
+    return plan[blockIndex];
+  }
+
+  function accumulateCurrentSet() {
+    if (!engine) return;
+    const block = currentBlock();
+    const amount = block.mode === "hold" ? engine.elapsedSeconds : engine.count;
+    const entry = resultsByExercise.get(block.exerciseId) || { exerciseLabel: block.label, muscles: block.muscles, reps: 0 };
+    entry.reps += amount;
+    resultsByExercise.set(block.exerciseId, entry);
+  }
 
   function setMessage(text, type) {
     messageBanner.textContent = text;
     messageBanner.className = `messageBanner ${type}`;
-  }
-
-  function setStagePill(stage) {
-    stagePill.textContent = `Phase : ${stage === "up" ? "haut" : "bas"}`;
   }
 
   function updateVoiceToggle() {
@@ -77,6 +109,117 @@ export function renderSessionScreen(root, ctx) {
     voiceCoach.setEnabled(!voiceCoach.enabled);
     updateVoiceToggle();
   });
+
+  function updateHud() {
+    const block = currentBlock();
+    exerciseLabelEl.textContent = `${block.label} - serie ${setIndex + 1}/${block.sets}`;
+
+    if (block.mode === "hold") {
+      counterEl.textContent = engine ? engine.elapsedSeconds : 0;
+      counterLabelEl.textContent = `Secondes / ${block.targetHoldSeconds}`;
+    } else {
+      counterEl.textContent = engine ? engine.count : 0;
+      counterLabelEl.textContent = `Repetitions / ${block.targetReps}`;
+    }
+    stagePill.textContent = `Muscles : ${block.muscles.map(muscleLabel).join(", ")}`;
+  }
+
+  function targetReached(block) {
+    if (!engine) return false;
+    if (block.mode === "hold") return engine.elapsedSeconds >= block.targetHoldSeconds;
+    return engine.count >= block.targetReps;
+  }
+
+  function startSet() {
+    const block = currentBlock();
+    engine = createExerciseEngine(getExercise(block.exerciseId));
+    phase = "working";
+    restOverlay.hidden = true;
+    voiceCoach.announceExerciseIntro(block.label, setIndex + 1, block.sets);
+    updateHud();
+  }
+
+  function startRest(seconds, onDone) {
+    phase = "resting";
+    let remaining = seconds;
+    restOverlay.hidden = false;
+    restCountdown.textContent = remaining;
+    restNext.textContent = "";
+    voiceCoach.announceRestStart(seconds);
+
+    restIntervalId = setInterval(() => {
+      remaining -= 1;
+      restCountdown.textContent = Math.max(remaining, 0);
+      if (remaining <= 0) {
+        clearInterval(restIntervalId);
+        restIntervalId = null;
+        voiceCoach.announceRestEnd();
+        onDone();
+      }
+    }, 1000);
+  }
+
+  function finishSet() {
+    accumulateCurrentSet();
+
+    const block = currentBlock();
+    const isLastSetOfBlock = setIndex >= block.sets - 1;
+    const isLastBlock = blockIndex >= plan.length - 1;
+
+    if (isLastSetOfBlock && isLastBlock) {
+      finishWorkout();
+      return;
+    }
+
+    startRest(block.restSeconds, () => {
+      if (isLastSetOfBlock) {
+        blockIndex += 1;
+        setIndex = 0;
+        voiceCoach.announceNextExercise(currentBlock().label);
+      } else {
+        setIndex += 1;
+      }
+      startSet();
+    });
+  }
+
+  function stopCamera() {
+    if (!cameraActive && rafId === null) return;
+    cameraActive = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    stopCameraStream(video);
+  }
+
+  async function finishWorkout() {
+    if (ended) return;
+    ended = true;
+    phase = "finished";
+    if (restIntervalId) {
+      clearInterval(restIntervalId);
+      restIntervalId = null;
+    }
+    restOverlay.hidden = true;
+    stopCamera();
+
+    const exerciseCount = resultsByExercise.size;
+    voiceCoach.announceWorkoutComplete(exerciseCount);
+    setMessage("Seance terminee", "success");
+
+    try {
+      await withTimeout(submitWorkoutResults(username, Array.from(resultsByExercise.values())), SUBMIT_TIMEOUT_MS);
+    } catch (err) {
+      console.error("Enregistrement de la seance impossible", err);
+    }
+
+    setTimeout(() => ctx.navigate("home"), 1600);
+  }
+
+  function abortWorkout() {
+    if (ended) return;
+    if (phase === "working") accumulateCurrentSet();
+    finishWorkout();
+  }
 
   function ensureCanvasSize() {
     if (canvasReady) return;
@@ -96,6 +239,15 @@ export function renderSessionScreen(root, ctx) {
     ctx2d.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     const lms = result.landmarks && result.landmarks[0];
+    if (lms) {
+      drawingUtils.drawConnectors(lms, PoseLandmarker.POSE_CONNECTIONS, { color: "#00e676", lineWidth: 3 });
+      drawingUtils.drawLandmarks(lms, { color: "#ffffff", radius: 3 });
+    }
+
+    if (phase !== "working") {
+      ctx2d.restore();
+      return;
+    }
 
     if (!lms) {
       setMessage("Mets-toi dans le cadre", "neutral");
@@ -103,39 +255,30 @@ export function renderSessionScreen(root, ctx) {
       return;
     }
 
-    drawingUtils.drawConnectors(lms, PoseLandmarker.POSE_CONNECTIONS, { color: "#00e676", lineWidth: 3 });
-    drawingUtils.drawLandmarks(lms, { color: "#ffffff", radius: 3 });
-
-    const side = pickSide(lms);
-    if (!areVisible([side.shoulder, side.elbow, side.wrist, side.hip, side.ankle], VIS_THRESHOLD)) {
-      setMessage("Recule-toi, corps entier visible", "neutral");
+    const evalResult = engine.evaluate(lms);
+    if (!evalResult.visible) {
+      setMessage(evalResult.message, "neutral");
       ctx2d.restore();
       return;
     }
 
-    const elbowAngle = angleAt(side.shoulder, side.elbow, side.wrist);
-    const alignAngle = angleAt(side.shoulder, side.hip, side.ankle);
-    const alignOk = alignAngle >= ALIGN_ANGLE;
+    setMessage(evalResult.message, evalResult.type);
+    updateHud();
 
-    debugBox.innerHTML = `Coude : ${elbowAngle.toFixed(0)} deg<br>Bassin : ${alignAngle.toFixed(0)} deg`;
-
-    const status = repCounter.evaluate(elbowAngle, alignOk);
-    setMessage(status.message, status.type);
-    setStagePill(status.stage);
-
-    if (status.repCompleted) {
-      counterEl.textContent = status.count;
-      voiceCoach.announceRepCount(status.count);
-    } else if (status.type === "warning") {
-      voiceCoach.announcePosture(status.code, status.message);
+    if (evalResult.repCompleted) {
+      voiceCoach.announceRepCount(engine.count);
+    } else if (evalResult.type === "warning") {
+      voiceCoach.announcePosture(evalResult.code, evalResult.message);
     }
     voiceCoach.maybeEncourage();
+
+    if (targetReached(currentBlock())) finishSet();
 
     ctx2d.restore();
   }
 
   function renderLoop() {
-    if (!active) return;
+    if (!cameraActive) return;
     if (video.readyState >= 2 && video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
       const result = landmarker.detectForVideo(video, performance.now());
@@ -150,9 +293,9 @@ export function renderSessionScreen(root, ctx) {
       landmarker = await ctx.getPoseLandmarker();
       drawingUtils = new DrawingUtils(ctx2d);
 
-      active = true;
-      setMessage("Mets-toi dans le cadre", "neutral");
+      cameraActive = true;
       voiceCoach.announceSessionStart();
+      startSet();
       renderLoop();
     } catch (err) {
       console.error(err);
@@ -160,36 +303,12 @@ export function renderSessionScreen(root, ctx) {
     }
   }
 
-  function cleanup() {
-    if (!active && rafId === null) return;
-    active = false;
-    if (rafId) cancelAnimationFrame(rafId);
-    rafId = null;
-    stopCameraStream(video);
-  }
-
-  async function finish() {
-    if (ended) return;
-    ended = true;
-
-    const finalCount = repCounter.count;
-    cleanup();
-    voiceCoach.announceSessionEnd(finalCount);
-
-    if (finalCount > 0) {
-      try {
-        await submitSession({ username, reps: finalCount });
-      } catch (err) {
-        console.error("Enregistrement de la seance impossible", err);
-      }
-    }
-
-    ctx.navigate("home");
-  }
-
-  endBtn.addEventListener("click", finish);
+  endBtn.addEventListener("click", abortWorkout);
 
   start();
 
-  return cleanup;
+  return () => {
+    stopCamera();
+    if (restIntervalId) clearInterval(restIntervalId);
+  };
 }

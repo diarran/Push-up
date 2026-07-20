@@ -38,7 +38,10 @@ export function renderHomeScreen(root, ctx) {
 
   root.appendChild(el);
 
-  el.querySelector("#startBtn").addEventListener("click", () => ctx.navigate("session"));
+  el.querySelector("#startBtn").addEventListener("click", () => {
+    ctx.setMuscleSelection([]);
+    ctx.navigate("targeting");
+  });
   el.querySelector("#logoutBtn").addEventListener("click", () => ctx.logout());
 
   async function load() {
@@ -61,7 +64,10 @@ export function renderHomeScreen(root, ctx) {
           .map(
             (s) => `
           <div class="historyItem">
-            <div class="hDate">${formatShortDate(s.performedOn)}</div>
+            <div>
+              <div class="hDate">${formatShortDate(s.performedOn)}</div>
+              <div class="hMeta">${escapeHtml(s.exerciseLabel || "")}</div>
+            </div>
             <div class="hReps">${s.reps}</div>
           </div>`
           )

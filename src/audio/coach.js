@@ -1,4 +1,13 @@
-import { START_LINES, ENCOURAGEMENT_LINES, sessionEndLine } from "./messages.js";
+import {
+  START_LINES,
+  ENCOURAGEMENT_LINES,
+  sessionEndLine,
+  exerciseIntroLine,
+  restStartLine,
+  REST_END_LINE,
+  nextExerciseLine,
+  workoutCompleteLine
+} from "./messages.js";
 
 const POSTURE_COOLDOWN_MS = 5000;
 const ENCOURAGEMENT_INTERVAL_MS = 20000;
@@ -109,6 +118,33 @@ export function createVoiceCoach() {
     enqueue(sessionEndLine(totalReps), { code: "session_end" });
   }
 
+  // Transitions d'une seance multi-exercices : chacune coupe la parole en
+  // cours (clearQueue) car elle marque un changement de contexte net.
+  function announceExerciseIntro(label, setIndex, totalSets) {
+    clearQueue();
+    lastEncouragementAt = Date.now();
+    enqueue(exerciseIntroLine(label, setIndex, totalSets), { code: "exercise_intro" });
+  }
+
+  function announceRestStart(seconds) {
+    clearQueue();
+    enqueue(restStartLine(seconds), { code: "rest_start" });
+  }
+
+  function announceRestEnd() {
+    clearQueue();
+    enqueue(REST_END_LINE, { code: "rest_end" });
+  }
+
+  function announceNextExercise(label) {
+    enqueue(nextExerciseLine(label), { code: "next_exercise" });
+  }
+
+  function announceWorkoutComplete(exerciseCount) {
+    clearQueue();
+    enqueue(workoutCompleteLine(exerciseCount), { code: "workout_complete" });
+  }
+
   return {
     setEnabled,
     announceSessionStart,
@@ -116,6 +152,11 @@ export function createVoiceCoach() {
     announcePosture,
     maybeEncourage,
     announceSessionEnd,
+    announceExerciseIntro,
+    announceRestStart,
+    announceRestEnd,
+    announceNextExercise,
+    announceWorkoutComplete,
     stop: clearQueue,
     get supported() {
       return supported;

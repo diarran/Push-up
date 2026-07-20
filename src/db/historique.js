@@ -3,9 +3,6 @@ import { localDateKey } from "../core/date.js";
 
 export class HistoriqueError extends Error {}
 
-const DEFAULT_EXERCICE = "Pompes";
-const DEFAULT_MUSCLES = "Pectoraux, triceps, epaules";
-
 function ensureConfigured() {
   if (!isSupabaseConfigured) {
     throw new HistoriqueError("Supabase n'est pas configure (voir .env.example)");
@@ -23,17 +20,31 @@ export async function ensureUser(pseudo) {
   }
 }
 
-export async function submitSession({ username, reps, durationSeconds }) {
+// Enregistre le resultat d'un exercice reellement effectue pendant la
+// seance. Pour un exercice "maintien" (planche), reps porte le nombre de
+// secondes tenues : la colonne repetitions n'a qu'une seule dimension
+// numerique disponible, on l'utilise dans ce sens pour cet exercice.
+async function submitExerciseResult({ username, exerciseLabel, muscles, reps }) {
+  const { error } = await supabase.from("historique").insert({
+    pseudo: username,
+    nom_exercice: exerciseLabel,
+    repetitions: Math.max(0, Math.round(reps)),
+    muscles_travailles: muscles.join(", ")
+  });
+  if (error) throw new HistoriqueError(error.message);
+}
+
+// results : [{ exerciseLabel, muscles, reps }] - une ligne par exercice
+// effectue pendant la seance (les exercices a 0 repetition/seconde sont
+// ignores).
+export async function submitWorkoutResults(username, results) {
   ensureConfigured();
   await ensureUser(username);
 
-  const { error } = await supabase.from("historique").insert({
-    pseudo: username,
-    nom_exercice: DEFAULT_EXERCICE,
-    repetitions: Math.max(0, Math.round(reps)),
-    muscles_travailles: DEFAULT_MUSCLES
-  });
-  if (error) throw new HistoriqueError(error.message);
+  for (const result of results) {
+    if (result.reps <= 0) continue;
+    await submitExerciseResult({ username, ...result });
+  }
 }
 
 // Retourne un tableau trie par total de repetitions decroissant :
@@ -66,12 +77,12 @@ export async function fetchLeaderboard() {
   return Array.from(totals.values()).sort((a, b) => b.totalReps - a.totalReps);
 }
 
-// Historique recent d'un pseudo : [{ reps, performedOn, createdAt }]
+// Historique recent d'un pseudo : [{ reps, exerciseLabel, performedOn, createdAt }]
 export async function fetchUserSessions(username, limit = 10) {
   ensureConfigured();
   const { data, error } = await supabase
     .from("historique")
-    .select("repetitions, date, created_at")
+    .select("repetitions, nom_exercice, date, created_at")
     .eq("pseudo", username)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -79,6 +90,7 @@ export async function fetchUserSessions(username, limit = 10) {
 
   return (data || []).map((row) => ({
     reps: row.repetitions,
+    exerciseLabel: row.nom_exercice,
     performedOn: row.date,
     createdAt: row.created_at
   }));
