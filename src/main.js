@@ -68,6 +68,11 @@ function navigate(screen) {
       root.innerHTML = '<div class="screen loadingScreen"><p class="emptyState">Chargement</p></div>';
       import("./ui/screens/targeting.js").then((m) => mount(m.renderTargetingScreen));
       break;
+    case "tutorial":
+      // Meme raison qu'au-dessus : Three.js charge a la demande.
+      root.innerHTML = '<div class="screen loadingScreen"><p class="emptyState">Chargement</p></div>';
+      import("./ui/screens/tutorial.js").then((m) => mount(m.renderTutorialScreen));
+      break;
     case "workoutSetup":
       cleanupCurrent = renderWorkoutSetupScreen(root, ctx);
       break;

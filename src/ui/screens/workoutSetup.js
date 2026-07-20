@@ -124,7 +124,7 @@ export function renderWorkoutSetupScreen(root, ctx) {
     // avant tout traitement asynchrone (voir coach.js: unlock()).
     ctx.voiceCoach.unlock();
     ctx.setWorkoutPlan(currentPlan.blocks);
-    ctx.navigate("session");
+    ctx.navigate("tutorial");
   });
 
   return () => {};

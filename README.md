@@ -12,9 +12,15 @@ usage grand public.
 `PASSCODE_ENABLED` dans `src/ui/screens/gate.js`) -> `home` (stats,
 historique) -> `targeting` (ciblage 3D des muscles a travailler) ->
 `workoutSetup` (analyse biomecanique, temps disponible, plan genere) ->
-`session` (exercices et series enchaines directement, sans pause,
-flash plein ecran a chaque repetition validee, coach vocal, bascule
-camera avant/arriere) -> retour a `home`.
+`tutorial` (demonstration 3D animee du premier exercice du plan, si une
+animation existe pour cet exercice ; sinon on passe directement a la
+seance, voir "Tutoriels animes") -> `session` (exercices et series
+enchaines directement, sans pause, flash plein ecran a chaque repetition
+validee, coach vocal, bascule camera avant/arriere) -> retour a `home`.
+
+Le document de conception de la refonte v4 (tutoriels 3D, dashboard avance
+avec carte de fatigue musculaire, generateur a progression continue,
+durcissement du moteur de pose) est dans `docs/TDD-v4.md`.
 
 ## Architecture
 
@@ -41,6 +47,8 @@ src/
   core/
     exercises/    moteur multi-exercices (angleRepCounter, holdTimer,
                   exerciseEngine, definitions pompes/squats/fentes/planche)
+    rig/          rig anime pour les tutoriels 3D (buildRig, animationClips,
+                  animateRig) - voir "Tutoriels animes"
     geometry.js, landmarks.js, poseEngine.js, cameraStream.js, date.js,
     withTimeout.js
   biomechanics/   taxonomie des muscles + regles d'equilibre (antagonistes)
@@ -51,12 +59,15 @@ src/
   auth/           gestion locale du pseudo + verification du mot de passe
   db/             acces direct aux tables Supabase (historique, classement)
   ui/
-    threeBody/    scene et corps 3D (Three.js)
+    threeBody/    scene et corps 3D (Three.js) ; hologramMaterial.js est le
+                  shader hologramme partage entre le ciblage et les
+                  tutoriels
     charts/       graphiques SVG maison (courbe, barres), sans dependance
-    screens/      gate, home, targeting, workoutSetup, session, progress,
-                  leaderboard
+    screens/      gate, home, targeting, tutorial, workoutSetup, session,
+                  progress, leaderboard
 supabase/migrations/0001_init.sql   schema complet (tables + policies)
 public/       manifest PWA, icones
+docs/TDD-v4.md   document de conception de la refonte v4
 ```
 
 ## Moteur multi-exercices
@@ -102,6 +113,25 @@ chiffres.
 selectionne, si l'un de ses antagonistes declares (`muscleGroups.js`) est
 absent de la selection, et le cas echeant previent d'un risque de
 desequilibre et suggere de l'ajouter.
+
+## Tutoriels animes
+
+Avant la camera, `src/ui/screens/tutorial.js` affiche une demonstration 3D
+du premier exercice du plan genere, avec la meme identite visuelle que le
+ciblage (hologramme, bloom, rotation libre a la souris/au doigt). Le corps
+anime (`src/core/rig/buildRig.js`) reprend les proportions de
+`buildBody.js` mais avec les bras en vraie hierarchie de pivots
+(epaule -> coude) pour pouvoir etre animes ; le reste du corps reste
+statique. Une animation est une simple liste de reperes temporels avec un
+angle par pivot (`src/core/rig/animationClips.js`), lue en boucle par
+interpolation lineaire (`src/core/rig/animateRig.js`).
+
+Ce n'est pas de la capture de mouvement ni un rig biomecanique complet :
+une approximation stylisee suffisante pour montrer le sens du geste sous
+tous les angles. Seules les pompes ont une animation pour l'instant ; les
+autres exercices utilisent le meme format et peuvent etre ajoutes sans
+changer le lecteur. Si le premier exercice du plan n'a pas d'animation,
+l'ecran est saute automatiquement et la seance demarre directement.
 
 ## Progression
 
@@ -253,6 +283,10 @@ le seul levier logiciel restant pour un cadrage plus large.
   partie (`mesh.userData.muscleId`).
 - **Fentes simplifiees** : suivent l'angle du genou avant comme un squat,
   sans distinguer jambe avant/arriere ni largeur de fente.
+- **Tutoriel 3D anime uniquement pour les pompes** : `animationClips.js` ne
+  contient qu'un clip. Pour squat/fente/planche, l'ecran de tutoriel est
+  automatiquement saute (voir "Tutoriels animes") ; ajouter leur clip est
+  la meme demarche (donnees seulement, le lecteur ne change pas).
 - **Certains muscles n'ont aucun exercice associe** : dos, biceps et
   mollets sont proposes au ciblage 3D et dans les suggestions
   d'equilibre biomecanique, mais aucun des 4 exercices actuels
