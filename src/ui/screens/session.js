@@ -5,7 +5,6 @@ import { getExercise } from "../../core/exercises/index.js";
 import { submitWorkoutResults } from "../../db/historique.js";
 import { withTimeout } from "../../core/withTimeout.js";
 import { muscleLabel } from "../../biomechanics/muscleGroups.js";
-import { REST_SECONDS } from "../../workout/generator.js";
 
 const SUBMIT_TIMEOUT_MS = 6000;
 const FLASH_DURATION_MS = 380;
@@ -24,7 +23,7 @@ export function renderSessionScreen(root, ctx) {
   el.className = "screen sessionScreen";
   el.innerHTML = `
     <video id="video" playsinline muted autoplay></video>
-    <canvas id="output"></canvas>
+    <canvas id="output" class="mirrored"></canvas>
     <div id="repFlash" class="repFlash"></div>
     <div class="hud">
       <div class="topBar">
@@ -35,6 +34,7 @@ export function renderSessionScreen(root, ctx) {
         </div>
         <div class="topRight">
           <button id="endBtn" class="dangerPill">Terminer</button>
+          <button id="cameraFlipBtn" class="ghostPill">Retourner camera</button>
           <button id="soundToggle" class="ghostPill"></button>
           <button id="debugToggle" class="ghostPill">Debug</button>
           <div id="debugBox" class="debugBox"></div>
@@ -44,11 +44,6 @@ export function renderSessionScreen(root, ctx) {
         <div id="messageBanner" class="messageBanner neutral">Chargement du modele</div>
         <div id="stagePill" class="stagePill"></div>
       </div>
-    </div>
-    <div id="restOverlay" class="restOverlay" hidden>
-      <div class="restLabel">Repos</div>
-      <div class="restCountdown" id="restCountdown">0</div>
-      <div class="restNext" id="restNext"></div>
     </div>
   `;
   root.appendChild(el);
@@ -65,10 +60,8 @@ export function renderSessionScreen(root, ctx) {
   const debugBox = el.querySelector("#debugBox");
   const debugToggle = el.querySelector("#debugToggle");
   const endBtn = el.querySelector("#endBtn");
+  const cameraFlipBtn = el.querySelector("#cameraFlipBtn");
   const soundToggle = el.querySelector("#soundToggle");
-  const restOverlay = el.querySelector("#restOverlay");
-  const restCountdown = el.querySelector("#restCountdown");
-  const restNext = el.querySelector("#restNext");
 
   let landmarker = null;
   let drawingUtils = null;
@@ -76,12 +69,12 @@ export function renderSessionScreen(root, ctx) {
   let canvasReady = false;
   let lastVideoTime = -1;
   let rafId = null;
-  let restIntervalId = null;
   let ended = false;
+  let facingMode = "user";
 
   let blockIndex = 0;
   let setIndex = 0;
-  let phase = "loading"; // "loading" | "working" | "resting" | "finished"
+  let phase = "loading"; // "loading" | "working" | "finished"
   let engine = null;
   const resultsByExercise = new Map();
 
@@ -149,37 +142,11 @@ export function renderSessionScreen(root, ctx) {
     const block = currentBlock();
     engine = createExerciseEngine(getExercise(block.exerciseId));
     phase = "working";
-    restOverlay.hidden = true;
     try {
       voiceCoach.announceExerciseIntro(block.label, setIndex + 1, block.sets);
     } finally {
       updateHud();
     }
-  }
-
-  function startRest(seconds, onDone) {
-    phase = "resting";
-    let remaining = seconds;
-    restOverlay.hidden = false;
-    restCountdown.textContent = remaining;
-    restNext.textContent = "";
-    voiceCoach.announceRestStart(seconds);
-
-    restIntervalId = setInterval(() => {
-      remaining -= 1;
-      restCountdown.textContent = Math.max(remaining, 0);
-      if (remaining <= 0) {
-        clearInterval(restIntervalId);
-        restIntervalId = null;
-        // onDone() doit s'executer meme si l'annonce vocale echoue : la
-        // reprise de la seance ne doit jamais dependre de la voix.
-        try {
-          voiceCoach.announceRestEnd();
-        } finally {
-          onDone();
-        }
-      }
-    }, 1000);
   }
 
   function finishSet() {
@@ -194,19 +161,19 @@ export function renderSessionScreen(root, ctx) {
       return;
     }
 
-    startRest(REST_SECONDS, () => {
-      try {
-        if (isLastSetOfBlock) {
-          blockIndex += 1;
-          setIndex = 0;
-          voiceCoach.announceNextExercise(currentBlock().label);
-        } else {
-          setIndex += 1;
-        }
-      } finally {
-        startSet();
+    // Enchainement direct sur la serie ou l'exercice suivant, sans pause
+    // chronometree.
+    try {
+      if (isLastSetOfBlock) {
+        blockIndex += 1;
+        setIndex = 0;
+        voiceCoach.announceNextExercise(currentBlock().label);
+      } else {
+        setIndex += 1;
       }
-    });
+    } finally {
+      startSet();
+    }
   }
 
   function stopCamera() {
@@ -217,15 +184,45 @@ export function renderSessionScreen(root, ctx) {
     stopCameraStream(video);
   }
 
+  // Le miroir (effet selfie) n'a de sens qu'avec la camera frontale : la
+  // camera arriere doit s'afficher normalement, sans inversion.
+  function applyMirror() {
+    canvas.classList.toggle("mirrored", facingMode === "user");
+  }
+
+  // Le champ de vision de la camera frontale est physiquement fixe :
+  // aucun reglage logiciel ne l'elargit au-dela de ce que fait deja
+  // object-fit: contain (image jamais rognee). Le seul vrai levier
+  // restant est de changer d'objectif : la camera arriere a souvent un
+  // champ de vision different, parfois plus large.
+  async function flipCamera() {
+    const wasActive = cameraActive;
+    cameraActive = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    rafId = null;
+    stopCameraStream(video);
+    canvasReady = false;
+    lastVideoTime = -1;
+
+    facingMode = facingMode === "user" ? "environment" : "user";
+    applyMirror();
+
+    try {
+      await startCameraStream(video, { facingMode, width: 720, height: 1280 });
+      if (wasActive) {
+        cameraActive = true;
+        renderLoop();
+      }
+    } catch (err) {
+      console.error("Impossible de changer de camera", err);
+      setMessage("Impossible de changer de camera", "warning");
+    }
+  }
+
   async function finishWorkout() {
     if (ended) return;
     ended = true;
     phase = "finished";
-    if (restIntervalId) {
-      clearInterval(restIntervalId);
-      restIntervalId = null;
-    }
-    restOverlay.hidden = true;
     stopCamera();
 
     const exerciseCount = resultsByExercise.size;
@@ -316,7 +313,7 @@ export function renderSessionScreen(root, ctx) {
 
   async function start() {
     try {
-      await startCameraStream(video, { facingMode: "user", width: 720, height: 1280 });
+      await startCameraStream(video, { facingMode, width: 720, height: 1280 });
       landmarker = await ctx.getPoseLandmarker();
       drawingUtils = new DrawingUtils(ctx2d);
 
@@ -331,11 +328,11 @@ export function renderSessionScreen(root, ctx) {
   }
 
   endBtn.addEventListener("click", abortWorkout);
+  cameraFlipBtn.addEventListener("click", flipCamera);
 
   start();
 
   return () => {
     stopCamera();
-    if (restIntervalId) clearInterval(restIntervalId);
   };
 }

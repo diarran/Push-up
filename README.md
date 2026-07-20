@@ -11,9 +11,9 @@ personnes), pas pour un usage grand public.
 `PASSCODE_ENABLED` dans `src/ui/screens/gate.js`) -> `home` (stats,
 historique) -> `targeting` (ciblage 3D des muscles a travailler) ->
 `workoutSetup` (analyse biomecanique, temps disponible, plan genere) ->
-`session` (exercices et series, flash plein ecran a chaque repetition
-validee, pause fixe de 30 secondes entre les series, coach vocal) ->
-retour a `home`.
+`session` (exercices et series enchaines directement, sans pause,
+flash plein ecran a chaque repetition validee, coach vocal, bascule
+camera avant/arriere) -> retour a `home`.
 
 ## Architecture
 
@@ -78,13 +78,21 @@ Deux machines a etats reutilisables :
 
 `src/workout/generator.js` prend la selection musculaire, le temps
 disponible et un niveau (`debutant`/`intermediaire`/`avance`, estime a
-partir de la moyenne des reps des 5 dernieres seances enregistrees) et
-produit une liste de blocs (exercice, series, repetitions ou secondes de
-maintien), ajustee pour tenir dans le temps donne (pause de repos
-comprise, voir `REST_SECONDS`). Regles fixes, pas d'apprentissage
-automatique. Une pause fixe de 30 secondes (identique pour tous les
-exercices, voir `REST_SECONDS` dans `src/workout/generator.js`) separe
-chaque serie.
+partir de la moyenne des reps des 5 dernieres seances enregistrees). Le
+temps est reparti a parts egales entre les exercices retenus, puis
+converti en repetitions (ou secondes de maintien) par serie : moins de
+temps donne moins de repetitions et/ou moins de series, plus de temps en
+donne davantage, dans des bornes realistes (`MIN_REPS`/`MAX_REPS`,
+`MIN_HOLD_SECONDS`/`MAX_HOLD_SECONDS`, `MAX_SETS`). Regles fixes, pas
+d'apprentissage automatique. Aucune pause n'est comptee entre les series,
+qui s'enchainent directement.
+
+Limite assumee : avec un seul exercice choisi et un temps tres long, la
+charge par serie et le nombre de series plafonnent (au-dela, ce serait
+un volume d'entrainement deraisonnable pour un seul mouvement) ; le champ
+`estimatedMinutes` du plan reflete alors honnetement un temps reel
+inferieur au temps demande plutot que de gonfler artificiellement les
+chiffres.
 
 `src/biomechanics/balanceRules.js` verifie, pour chaque muscle
 selectionne, si l'un de ses antagonistes declares (`muscleGroups.js`) est
@@ -159,9 +167,10 @@ d'accueil pour une installation en PWA sans barre d'adresse.
 
 Chaque fichier `src/core/exercises/*.js` centralise ses propres seuils
 (`downAngle`/`upAngle` pour les exercices en repetitions, angle
-d'alignement dans `computeMetrics`). Les preréglages de serie (nombre de
-series, repetitions, secondes de maintien par niveau) sont dans
-`LEVEL_PRESETS` (`src/workout/generator.js`).
+d'alignement dans `computeMetrics`). Le nombre de series de base par
+niveau et les bornes de charge par serie sont dans
+`src/workout/generator.js` (`BASE_SETS_BY_LEVEL`, `MIN_REPS`/`MAX_REPS`,
+`MIN_HOLD_SECONDS`/`MAX_HOLD_SECONDS`).
 
 ## Coach vocal
 
@@ -170,17 +179,27 @@ un anti-spam par cooldown independant pour chaque type d'alerte (5
 secondes), et des encouragements declenches uniquement pendant les temps
 morts (file vide, pas de parole en cours), toutes les 20 secondes au plus.
 Un bouton "Son" dans l'ecran de seance permet de la couper a tout moment.
-Les transitions de seance (debut d'exercice, debut/fin de repos, exercice
-suivant, fin de seance) coupent la parole en cours : ce sont des
-changements de contexte nets qui doivent passer avant le reste. Le
-coach vocal ne leve jamais d'exception vers son appelant (voir
-`src/audio/coach.js`) : meme si la Web Speech API se comporte mal
-(frequent sur Safari iOS), la progression de la seance (repos, serie
-suivante) n'en depend jamais.
+Les transitions de seance (debut d'exercice, exercice suivant, fin de
+seance) coupent la parole en cours : ce sont des changements de contexte
+nets qui doivent passer avant le reste. Le coach vocal ne leve jamais
+d'exception vers son appelant (voir `src/audio/coach.js`) : meme si la
+Web Speech API se comporte mal (frequent sur Safari iOS), la progression
+de la seance (serie suivante) n'en depend jamais.
 
 A chaque repetition validee, un flash plein ecran (vert, ~380 ms, via
 l'API Web Animations) s'ajoute au changement de couleur du bandeau de
 message.
+
+## Camera
+
+Le canvas utilise `object-fit: contain` (jamais `cover`) : l'image
+complete de la camera est toujours visible, quitte a avoir des bandes
+noires plutot que de rogner une partie du corps. Un bouton "Retourner
+camera" dans l'ecran de seance bascule entre camera frontale et
+arriere ; le miroir (effet selfie) ne s'applique qu'en frontale. Le
+champ de vision d'une camera de telephone est fixe par l'objectif : au-
+dela de ce que permet `contain`, changer d'objectif (avant/arriere) est
+le seul levier logiciel restant pour un cadrage plus large.
 
 ## Limites connues
 
@@ -196,6 +215,13 @@ message.
   partie (`mesh.userData.muscleId`).
 - **Fentes simplifiees** : suivent l'angle du genou avant comme un squat,
   sans distinguer jambe avant/arriere ni largeur de fente.
+- **Certains muscles n'ont aucun exercice associe** : dos, biceps et
+  mollets sont proposes au ciblage 3D et dans les suggestions
+  d'equilibre biomecanique, mais aucun des 4 exercices actuels
+  (`src/core/exercises/`) ne les travaille. Les selectionner seuls ne
+  genere aucun bloc exploitable (le generateur retombe alors sur les
+  exercices disponibles). Ajouter un exercice les couvrant est le
+  complement naturel.
 - **Pas de test d'evaluation camera** : le niveau de depart est estime
   uniquement a partir de l'historique enregistre (moyenne des 5 dernieres
   seances). Un test devant la camera (ex. repetitions max en 30 secondes)
