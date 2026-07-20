@@ -2,6 +2,11 @@ import { checkGroupPasscode } from "../../auth/groupGate.js";
 import { ensureUser, HistoriqueError } from "../../db/historique.js";
 import { isSupabaseConfigured } from "../../lib/supabaseClient.js";
 
+// Desactive temporairement le mot de passe de groupe (debogage en cours).
+// Remettre a true pour retablir la protection : ca reaffiche le champ et
+// reactive la verification, sans rien supprimer.
+const PASSCODE_ENABLED = false;
+
 export function renderGateScreen(root, ctx) {
   const el = document.createElement("div");
   el.className = "screen gateScreen";
@@ -14,10 +19,14 @@ export function renderGateScreen(root, ctx) {
         : '<p class="warningBox">Supabase n\'est pas configure. Renseigne VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY (voir .env.example), redemarre le serveur, puis recharge la page.</p>'
     }
     <form id="gateForm" class="gateForm">
-      <label class="fieldLabel">
+      ${
+        PASSCODE_ENABLED
+          ? `<label class="fieldLabel">
         Code d'acces du groupe
         <input type="password" id="passcodeInput" autocomplete="off" required />
-      </label>
+      </label>`
+          : ""
+      }
       <label class="fieldLabel">
         Pseudo
         <input type="text" id="usernameInput" autocomplete="off" maxlength="24" required />
@@ -39,11 +48,13 @@ export function renderGateScreen(root, ctx) {
     submitBtn.disabled = true;
     submitBtn.textContent = "Verification";
 
-    const passcode = el.querySelector("#passcodeInput").value.trim();
     const username = el.querySelector("#usernameInput").value.trim();
 
     try {
-      if (!checkGroupPasscode(passcode)) throw new HistoriqueError("Code d'acces incorrect");
+      if (PASSCODE_ENABLED) {
+        const passcode = el.querySelector("#passcodeInput").value.trim();
+        if (!checkGroupPasscode(passcode)) throw new HistoriqueError("Code d'acces incorrect");
+      }
       if (!username) throw new HistoriqueError("Pseudo requis");
 
       await ensureUser(username);
