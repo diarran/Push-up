@@ -135,8 +135,11 @@ export function renderSessionScreen(root, ctx) {
     engine = createExerciseEngine(getExercise(block.exerciseId));
     phase = "working";
     restOverlay.hidden = true;
-    voiceCoach.announceExerciseIntro(block.label, setIndex + 1, block.sets);
-    updateHud();
+    try {
+      voiceCoach.announceExerciseIntro(block.label, setIndex + 1, block.sets);
+    } finally {
+      updateHud();
+    }
   }
 
   function startRest(seconds, onDone) {
@@ -153,8 +156,13 @@ export function renderSessionScreen(root, ctx) {
       if (remaining <= 0) {
         clearInterval(restIntervalId);
         restIntervalId = null;
-        voiceCoach.announceRestEnd();
-        onDone();
+        // onDone() doit s'executer meme si l'annonce vocale echoue : la
+        // reprise de la seance ne doit jamais dependre de la voix.
+        try {
+          voiceCoach.announceRestEnd();
+        } finally {
+          onDone();
+        }
       }
     }, 1000);
   }
@@ -172,14 +180,17 @@ export function renderSessionScreen(root, ctx) {
     }
 
     startRest(block.restSeconds, () => {
-      if (isLastSetOfBlock) {
-        blockIndex += 1;
-        setIndex = 0;
-        voiceCoach.announceNextExercise(currentBlock().label);
-      } else {
-        setIndex += 1;
+      try {
+        if (isLastSetOfBlock) {
+          blockIndex += 1;
+          setIndex = 0;
+          voiceCoach.announceNextExercise(currentBlock().label);
+        } else {
+          setIndex += 1;
+        }
+      } finally {
+        startSet();
       }
-      startSet();
     });
   }
 

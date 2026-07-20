@@ -33,8 +33,12 @@ export function createVoiceCoach() {
 
   function pickVoice() {
     if (!synth) return;
-    const voices = synth.getVoices();
-    voice = voices.find((v) => v.lang === "fr-FR") || voices.find((v) => v.lang?.startsWith("fr")) || voices[0] || null;
+    try {
+      const voices = synth.getVoices();
+      voice = voices.find((v) => v.lang === "fr-FR") || voices.find((v) => v.lang?.startsWith("fr")) || voices[0] || null;
+    } catch (err) {
+      console.error("Coach vocal : impossible de lister les voix", err);
+    }
   }
 
   if (supported) {
@@ -42,25 +46,37 @@ export function createVoiceCoach() {
     synth.addEventListener("voiceschanged", pickVoice);
   }
 
+  // La Web Speech API est connue pour etre peu fiable sur Safari iOS,
+  // notamment lorsqu'un appel intervient plusieurs "await" apres le geste
+  // utilisateur d'origine (ex. apres le chargement du modele de pose).
+  // Ce module ne doit jamais laisser une erreur de synthese vocale
+  // remonter a l'appelant : la voix est une aide, pas une dependance dont
+  // la seance depend pour avancer (decompte de repos, changement de serie).
   function processQueue() {
     if (!enabled || speaking || queue.length === 0) return;
     const next = queue.shift();
-    const utterance = new SpeechSynthesisUtterance(next.text);
-    utterance.lang = "fr-FR";
-    if (voice) utterance.voice = voice;
-    utterance.rate = 1.02;
-    utterance.pitch = 1;
 
-    speaking = true;
-    utterance.onend = () => {
+    try {
+      const utterance = new SpeechSynthesisUtterance(next.text);
+      utterance.lang = "fr-FR";
+      if (voice) utterance.voice = voice;
+      utterance.rate = 1.02;
+      utterance.pitch = 1;
+
+      speaking = true;
+      utterance.onend = () => {
+        speaking = false;
+        processQueue();
+      };
+      utterance.onerror = () => {
+        speaking = false;
+        processQueue();
+      };
+      synth.speak(utterance);
+    } catch (err) {
+      console.error("Coach vocal : echec de la synthese vocale", err);
       speaking = false;
-      processQueue();
-    };
-    utterance.onerror = () => {
-      speaking = false;
-      processQueue();
-    };
-    synth.speak(utterance);
+    }
   }
 
   function enqueue(text, { code = null, cooldownMs = 0 } = {}) {
@@ -80,7 +96,11 @@ export function createVoiceCoach() {
   function clearQueue() {
     queue = [];
     speaking = false;
-    if (synth) synth.cancel();
+    try {
+      if (synth) synth.cancel();
+    } catch (err) {
+      console.error("Coach vocal : echec de l'annulation", err);
+    }
   }
 
   function setEnabled(value) {
@@ -145,8 +165,26 @@ export function createVoiceCoach() {
     enqueue(workoutCompleteLine(exerciseCount), { code: "workout_complete" });
   }
 
+  // Safari iOS n'autorise la synthese vocale qu'apres un premier appel a
+  // speak() intervenu de facon synchrone dans un geste utilisateur (clic).
+  // Le premier message reel de la seance arrive plusieurs "await" plus tard
+  // (camera, chargement du modele) : trop tard pour etre rattache au
+  // geste. A appeler directement dans le gestionnaire de clic qui lance la
+  // seance, avant tout traitement asynchrone.
+  function unlock() {
+    if (!enabled) return;
+    try {
+      const utterance = new SpeechSynthesisUtterance(" ");
+      utterance.volume = 0;
+      synth.speak(utterance);
+    } catch (err) {
+      console.error("Coach vocal : echec du deblocage audio", err);
+    }
+  }
+
   return {
     setEnabled,
+    unlock,
     announceSessionStart,
     announceRepCount,
     announcePosture,

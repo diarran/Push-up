@@ -120,6 +120,9 @@ export function renderWorkoutSetupScreen(root, ctx) {
 
   startWorkoutBtn.addEventListener("click", () => {
     if (!currentPlan || currentPlan.blocks.length === 0) return;
+    // Doit rester la toute premiere instruction du gestionnaire de clic,
+    // avant tout traitement asynchrone (voir coach.js: unlock()).
+    ctx.voiceCoach.unlock();
     ctx.setWorkoutPlan(currentPlan.blocks);
     ctx.navigate("session");
   });
