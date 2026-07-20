@@ -108,7 +108,7 @@ export function renderWorkoutSetupScreen(root, ctx) {
         return `
         <div class="planBlock">
           <div class="planBlockLabel">${escapeHtml(block.label)}</div>
-          <div class="planBlockMeta">${block.sets} series de ${target}, repos ${block.restSeconds} s</div>
+          <div class="planBlockMeta">${block.sets} series de ${target}</div>
         </div>`;
       })
       .join("");

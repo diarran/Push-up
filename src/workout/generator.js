@@ -3,9 +3,9 @@ import { exercisesForMuscles, listExercises } from "../core/exercises/index.js";
 // Preréglages par niveau. Pas de machine learning ici : des regles fixes,
 // simples a ajuster.
 const LEVEL_PRESETS = {
-  debutant: { sets: 3, reps: 8, holdSeconds: 20, restSeconds: 45 },
-  intermediaire: { sets: 3, reps: 12, holdSeconds: 30, restSeconds: 30 },
-  avance: { sets: 4, reps: 15, holdSeconds: 45, restSeconds: 20 }
+  debutant: { sets: 3, reps: 8, holdSeconds: 20 },
+  intermediaire: { sets: 3, reps: 12, holdSeconds: 30 },
+  avance: { sets: 4, reps: 15, holdSeconds: 45 }
 };
 
 const SECONDS_PER_REP = 3;
@@ -25,12 +25,12 @@ export function deriveLevelFromHistory(sessions) {
 
 function estimateBlockSeconds(block) {
   const workSeconds = block.mode === "hold" ? block.targetHoldSeconds : block.targetReps * SECONDS_PER_REP;
-  return block.sets * (workSeconds + block.restSeconds);
+  return block.sets * workSeconds;
 }
 
 // { muscleIds, minutes, level } -> { level, blocks, estimatedMinutes }
 // blocks : [{ exerciseId, label, mode, muscles, sets, targetReps,
-//             targetHoldSeconds, restSeconds }]
+//             targetHoldSeconds }]
 export function generateWorkout({ muscleIds, minutes, level = "intermediaire" }) {
   const preset = LEVEL_PRESETS[level] || LEVEL_PRESETS.intermediaire;
 
@@ -44,8 +44,7 @@ export function generateWorkout({ muscleIds, minutes, level = "intermediaire" })
     muscles: exercise.muscles,
     sets: preset.sets,
     targetReps: exercise.mode === "reps" ? preset.reps : null,
-    targetHoldSeconds: exercise.mode === "hold" ? preset.holdSeconds : null,
-    restSeconds: preset.restSeconds
+    targetHoldSeconds: exercise.mode === "hold" ? preset.holdSeconds : null
   }));
 
   const budgetSeconds = Math.max(minutes, 1) * 60;

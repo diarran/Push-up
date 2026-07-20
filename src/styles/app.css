@@ -466,35 +466,6 @@ button {
   margin-bottom: 2px;
 }
 
-/* ---------- Repos entre series ---------- */
-.restOverlay {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: rgba(10, 10, 10, 0.9);
-  backdrop-filter: blur(6px);
-}
-.restLabel {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-}
-.restCountdown {
-  font-size: 4.5rem;
-  font-weight: 800;
-  color: var(--accent);
-}
-.restNext {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
 /* ---------- Ciblage 3D ---------- */
 .targetingScreen {
   overflow: hidden;

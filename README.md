@@ -7,10 +7,12 @@ personnes), pas pour un usage grand public.
 
 ## Parcours utilisateur
 
-`gate` (mot de passe + pseudo) -> `home` (stats, historique) -> `targeting`
-(ciblage 3D des muscles a travailler) -> `workoutSetup` (analyse
-biomecanique, temps disponible, plan genere) -> `session` (enchainement des
-exercices, series, repos, coach vocal) -> retour a `home`.
+`gate` (pseudo ; mot de passe de groupe desactive temporairement, voir
+`PASSCODE_ENABLED` dans `src/ui/screens/gate.js`) -> `home` (stats,
+historique) -> `targeting` (ciblage 3D des muscles a travailler) ->
+`workoutSetup` (analyse biomecanique, temps disponible, plan genere) ->
+`session` (enchainement direct des exercices et series, sans pause
+chronometree, coach vocal) -> retour a `home`.
 
 ## Architecture
 
@@ -41,7 +43,7 @@ src/
     withTimeout.js
   biomechanics/   taxonomie des muscles + regles d'equilibre (antagonistes)
   workout/        generateur de seance (temps, muscles, niveau -> plan)
-  audio/          coach vocal (file d'attente, anti-spam, transitions, repos)
+  audio/          coach vocal (file d'attente, anti-spam, transitions)
   lib/            client Supabase
   auth/           gestion locale du pseudo + verification du mot de passe
   db/             acces direct aux tables Supabase (historique, classement)
@@ -77,8 +79,10 @@ Deux machines a etats reutilisables :
 disponible et un niveau (`debutant`/`intermediaire`/`avance`, estime a
 partir de la moyenne des reps des 5 dernieres seances enregistrees) et
 produit une liste de blocs (exercice, series, repetitions ou secondes de
-maintien, repos), ajustee pour tenir dans le temps donne. Regles fixes,
-pas d'apprentissage automatique.
+maintien), ajustee pour tenir dans le temps donne. Regles fixes, pas
+d'apprentissage automatique. Les series s'enchainent directement, sans
+pause chronometree entre elles (fonctionnalite retiree, voir "Limites
+connues").
 
 `src/biomechanics/balanceRules.js` verifie, pour chaque muscle
 selectionne, si l'un de ses antagonistes declares (`muscleGroups.js`) est
@@ -154,7 +158,7 @@ d'accueil pour une installation en PWA sans barre d'adresse.
 Chaque fichier `src/core/exercises/*.js` centralise ses propres seuils
 (`downAngle`/`upAngle` pour les exercices en repetitions, angle
 d'alignement dans `computeMetrics`). Les preréglages de serie (nombre de
-series, repetitions, secondes de repos par niveau) sont dans
+series, repetitions, secondes de maintien par niveau) sont dans
 `LEVEL_PRESETS` (`src/workout/generator.js`).
 
 ## Coach vocal
@@ -164,12 +168,18 @@ un anti-spam par cooldown independant pour chaque type d'alerte (5
 secondes), et des encouragements declenches uniquement pendant les temps
 morts (file vide, pas de parole en cours), toutes les 20 secondes au plus.
 Un bouton "Voix" dans l'ecran de seance permet de la couper a tout moment.
-Les transitions de seance (debut d'exercice, debut/fin de repos, exercice
-suivant, fin de seance) coupent la parole en cours : ce sont des
-changements de contexte nets qui doivent passer avant le reste.
+Les transitions de seance (debut d'exercice, exercice suivant, fin de
+seance) coupent la parole en cours : ce sont des changements de contexte
+nets qui doivent passer avant le reste.
 
 ## Limites connues
 
+- **Mot de passe de groupe desactive temporairement** : l'ecran d'acces ne
+  demande plus que le pseudo (`PASSCODE_ENABLED = false` dans
+  `src/ui/screens/gate.js`). A remettre a `true` pour retablir le filtre.
+- **Pas de pause chronometree entre les series** : fonctionnalite retiree
+  (bugguee de facon persistante sur Safari iOS, l'ecran de repos restait
+  bloque). Les series et exercices s'enchainent desormais directement.
 - **Corps 3D stylise, pas anatomique** : le ciblage utilise des primitives
   (capsules/boites) groupees par muscle, pas un maillage anatomique
   segmente (ceux-ci sont generalement des assets proprietaires). Un vrai
