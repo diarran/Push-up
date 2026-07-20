@@ -95,3 +95,26 @@ export async function fetchUserSessions(username, limit = 10) {
     createdAt: row.created_at
   }));
 }
+
+// Toutes les seances d'un pseudo sur les N derniers jours (pour la page
+// Progression : agregations quotidiennes, par exercice, records...).
+export async function fetchUserSessionsRange(username, days = 30) {
+  ensureConfigured();
+  const since = new Date();
+  since.setDate(since.getDate() - days + 1);
+
+  const { data, error } = await supabase
+    .from("historique")
+    .select("repetitions, nom_exercice, date, created_at")
+    .eq("pseudo", username)
+    .gte("date", localDateKey(since))
+    .order("created_at", { ascending: true });
+  if (error) throw new HistoriqueError(error.message);
+
+  return (data || []).map((row) => ({
+    reps: row.repetitions,
+    exerciseLabel: row.nom_exercice,
+    performedOn: row.date,
+    createdAt: row.created_at
+  }));
+}

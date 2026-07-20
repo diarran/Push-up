@@ -1,9 +1,10 @@
 # BSE push up
 
 Coach de musculation au poids de corps par vision par ordinateur
-(MediaPipe), avec ciblage musculaire 3D, generation de seance, coach vocal
-et classement de groupe. Concu pour un petit groupe ferme (une dizaine de
-personnes), pas pour un usage grand public.
+(MediaPipe), avec ciblage musculaire 3D, generation de seance, coach
+vocal, suivi de progression avec graphiques et classement de groupe.
+Concu pour un petit groupe ferme (une dizaine de personnes), pas pour un
+usage grand public.
 
 ## Parcours utilisateur
 
@@ -43,14 +44,17 @@ src/
     geometry.js, landmarks.js, poseEngine.js, cameraStream.js, date.js,
     withTimeout.js
   biomechanics/   taxonomie des muscles + regles d'equilibre (antagonistes)
-  workout/        generateur de seance (temps, muscles, niveau -> plan)
+  workout/        generateur de seance + agregations de progression
+                  (totaux quotidiens, par exercice, record, streak)
   audio/          coach vocal (file d'attente, anti-spam, transitions)
   lib/            client Supabase
   auth/           gestion locale du pseudo + verification du mot de passe
   db/             acces direct aux tables Supabase (historique, classement)
   ui/
     threeBody/    scene et corps 3D (Three.js)
-    screens/      gate, home, targeting, workoutSetup, session, leaderboard
+    charts/       graphiques SVG maison (courbe, barres), sans dependance
+    screens/      gate, home, targeting, workoutSetup, session, progress,
+                  leaderboard
 supabase/migrations/0001_init.sql   schema complet (tables + policies)
 public/       manifest PWA, icones
 ```
@@ -98,6 +102,26 @@ chiffres.
 selectionne, si l'un de ses antagonistes declares (`muscleGroups.js`) est
 absent de la selection, et le cas echeant previent d'un risque de
 desequilibre et suggere de l'ajouter.
+
+## Progression
+
+Nouvel onglet "Progression" (entre Accueil et Classement) montrant, sur
+les 30 derniers jours :
+
+- une courbe des repetitions par jour (`src/ui/charts/lineChart.js`)
+- une repartition par exercice en barres horizontales
+  (`src/ui/charts/barChart.js`)
+- trois indicateurs : total sur la periode, record de seance (plus haut
+  nombre de repetitions/secondes sur une seule ligne d'historique), jours
+  consecutifs avec au moins une seance
+
+Les graphiques sont du SVG genere a la main (`src/ui/charts/`), sans
+bibliotheque graphique externe, pour rester coherent avec le reste de
+l'architecture vanilla et ne pas alourdir le bundle. Les agregations
+(`src/workout/progressStats.js`) sont des fonctions pures, testables
+independamment de Supabase. La requete (`fetchUserSessionsRange` dans
+`src/db/historique.js`) est protegee par le meme garde-fou `withTimeout`
+que le reste de l'application.
 
 ## Pourquoi pas de comptes individuels
 

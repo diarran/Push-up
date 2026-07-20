@@ -7,6 +7,7 @@ import { renderHomeScreen } from "./ui/screens/home.js";
 import { renderWorkoutSetupScreen } from "./ui/screens/workoutSetup.js";
 import { renderSessionScreen } from "./ui/screens/session.js";
 import { renderLeaderboardScreen } from "./ui/screens/leaderboard.js";
+import { renderProgressScreen } from "./ui/screens/progress.js";
 
 const root = document.getElementById("app");
 const voiceCoach = createVoiceCoach();
@@ -75,6 +76,9 @@ function navigate(screen) {
       break;
     case "leaderboard":
       cleanupCurrent = renderLeaderboardScreen(root, ctx);
+      break;
+    case "progress":
+      cleanupCurrent = renderProgressScreen(root, ctx);
       break;
     case "home":
       cleanupCurrent = renderHomeScreen(root, ctx);

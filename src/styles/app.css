@@ -66,9 +66,9 @@ button {
   background: var(--bg-tile);
   border: 1px solid var(--border);
   color: var(--text-muted);
-  padding: 10px;
+  padding: 10px 4px;
   border-radius: var(--radius-md);
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   font-weight: 600;
 }
 .navTab.active {
@@ -588,4 +588,57 @@ button {
   color: var(--text-faint);
   font-size: 0.75rem;
   margin-top: 2px;
+}
+
+/* ---------- Progression (graphiques) ---------- */
+.progressScreen {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 24px;
+}
+.chartContainer {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+}
+.chartSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+.chartAxis {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.chartArea {
+  fill: rgba(0, 230, 118, 0.16);
+  stroke: none;
+}
+.chartLine {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.chartLabel {
+  fill: var(--text-faint);
+  font-size: 8px;
+  text-anchor: middle;
+}
+.chartBar {
+  fill: var(--accent);
+}
+.chartBarLabel {
+  fill: var(--text-muted);
+  font-size: 10px;
+  dominant-baseline: middle;
+}
+.chartBarValue {
+  fill: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  dominant-baseline: middle;
 }
