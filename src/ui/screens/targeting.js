@@ -1,8 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { buildBody, setMuscleHighlighted } from "../threeBody/buildBody.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { buildBody, setMuscleHighlighted, updateHologramPulse, RIM_COLOR } from "../threeBody/buildBody.js";
 import { listMuscleGroups } from "../../biomechanics/muscleGroups.js";
 import { escapeHtml } from "../escapeHtml.js";
+
+const SCENE_BG = 0x05100c;
 
 export function renderTargetingScreen(root, ctx) {
   const el = document.createElement("div");
@@ -28,13 +34,15 @@ export function renderTargetingScreen(root, ctx) {
   const muscleLabels = new Map(listMuscleGroups().map((m) => [m.id, m.label]));
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a0a);
+  scene.background = new THREE.Color(SCENE_BG);
+  scene.fog = new THREE.FogExp2(SCENE_BG, 0.05);
 
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
   camera.position.set(0, 2, 7);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const pixelRatio = Math.min(window.devicePixelRatio, 2);
+  renderer.setPixelRatio(pixelRatio);
   container.appendChild(renderer.domElement);
 
   const controls = new OrbitControls(camera, renderer.domElement);
@@ -44,20 +52,29 @@ export function renderTargetingScreen(root, ctx) {
   controls.maxDistance = 12;
   controls.update();
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-  const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
-  keyLight.position.set(3, 5, 4);
-  scene.add(keyLight);
+  // Grille technique au sol : pure ambiance "plateforme hologramme".
+  const grid = new THREE.GridHelper(14, 28, RIM_COLOR.clone(), RIM_COLOR.clone());
+  grid.position.y = -1.5;
+  grid.material.transparent = true;
+  grid.material.opacity = 0.18;
+  scene.add(grid);
 
   const { group, parts } = buildBody();
   scene.add(group);
 
   for (const muscleId of selected) setMuscleHighlighted(parts, muscleId, true);
 
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.9, 0.4, 0.55);
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
+
   function resize() {
     const { clientWidth, clientHeight } = container;
     if (clientWidth === 0 || clientHeight === 0) return;
     renderer.setSize(clientWidth, clientHeight);
+    composer.setSize(clientWidth, clientHeight);
     camera.aspect = clientWidth / clientHeight;
     camera.updateProjectionMatrix();
   }
@@ -120,9 +137,13 @@ export function renderTargetingScreen(root, ctx) {
   renderer.domElement.addEventListener("pointerup", onPointerUp);
 
   let rafId = null;
+  const clock = new THREE.Clock();
   function animate() {
+    const elapsed = clock.getElapsedTime();
+    grid.rotation.y = elapsed * 0.05;
+    updateHologramPulse(parts, elapsed);
     controls.update();
-    renderer.render(scene, camera);
+    composer.render();
     rafId = requestAnimationFrame(animate);
   }
   resize();
@@ -139,7 +160,11 @@ export function renderTargetingScreen(root, ctx) {
     renderer.domElement.removeEventListener("pointerdown", onPointerDown);
     renderer.domElement.removeEventListener("pointerup", onPointerUp);
     controls.dispose();
+    bloomPass.dispose();
+    composer.dispose();
     renderer.dispose();
+    grid.geometry.dispose();
+    grid.material.dispose();
     for (const part of parts) part.material.dispose();
   };
 }

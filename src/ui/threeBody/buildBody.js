@@ -6,13 +6,62 @@ import * as THREE from "three";
 // le ciblage, en attendant un eventuel maillage segmente reel qui se
 // brancherait au meme endroit (le reste de l'ecran ne depend que de
 // mesh.userData.muscleId, pas de la forme des meshes).
+//
+// Rendu "hologramme" : chaque partie utilise un shader Fresnel (coeur sombre
+// translucide, bords lumineux) plutot qu'un materiau standard. C'est ce qui,
+// combine au bloom (post-traitement, voir targeting.js), donne l'effet
+// neon/futuriste.
 
-const BASE_COLOR = 0x2a2a2a;
-export const HIGHLIGHT_COLOR = 0x00e676;
+const BASE_COLOR = new THREE.Color(0x030a08);
+export const RIM_COLOR = new THREE.Color(0x00e676);
+const BASE_GLOW_INTENSITY = 0.4;
+const SELECTED_GLOW_INTENSITY = 1.8;
 
-function addPart(group, parts, material, muscleId, geometry, position) {
-  const mesh = new THREE.Mesh(geometry, material.clone());
+const VERTEX_SHADER = `
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewPosition = -mvPosition.xyz;
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const FRAGMENT_SHADER = `
+  uniform vec3 baseColor;
+  uniform vec3 glowColor;
+  uniform float glowIntensity;
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  void main() {
+    vec3 viewDir = normalize(vViewPosition);
+    float fresnel = pow(1.0 - max(dot(viewDir, normalize(vNormal)), 0.0), 2.6);
+    vec3 color = baseColor + glowColor * fresnel * glowIntensity;
+    float alpha = clamp(0.1 + fresnel * 0.8, 0.0, 1.0);
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+function createHologramMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      baseColor: { value: BASE_COLOR.clone() },
+      glowColor: { value: RIM_COLOR.clone() },
+      glowIntensity: { value: BASE_GLOW_INTENSITY }
+    },
+    vertexShader: VERTEX_SHADER,
+    fragmentShader: FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  });
+}
+
+function addPart(group, parts, muscleId, geometry, position) {
+  const mesh = new THREE.Mesh(geometry, createHologramMaterial());
   mesh.userData.muscleId = muscleId;
+  mesh.userData.selected = false;
   mesh.position.set(...position);
   group.add(mesh);
   parts.push(mesh);
@@ -22,34 +71,33 @@ function addPart(group, parts, material, muscleId, geometry, position) {
 export function buildBody() {
   const group = new THREE.Group();
   const parts = [];
-  const baseMaterial = new THREE.MeshStandardMaterial({ color: BASE_COLOR, roughness: 0.6, metalness: 0.1 });
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 24), baseMaterial.clone());
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 24), createHologramMaterial());
   head.position.set(0, 3.6, 0);
   group.add(head);
 
-  addPart(group, parts, baseMaterial, "pectoraux", new THREE.BoxGeometry(1.4, 1, 0.35), [0, 2.7, 0.35]);
-  addPart(group, parts, baseMaterial, "dos", new THREE.BoxGeometry(1.4, 1, 0.35), [0, 2.7, -0.35]);
-  addPart(group, parts, baseMaterial, "abdominaux", new THREE.BoxGeometry(1.1, 0.9, 0.3), [0, 1.75, 0.35]);
-  addPart(group, parts, baseMaterial, "lombaires", new THREE.BoxGeometry(1.1, 0.9, 0.3), [0, 1.75, -0.35]);
+  addPart(group, parts, "pectoraux", new THREE.BoxGeometry(1.4, 1, 0.35), [0, 2.7, 0.35]);
+  addPart(group, parts, "dos", new THREE.BoxGeometry(1.4, 1, 0.35), [0, 2.7, -0.35]);
+  addPart(group, parts, "abdominaux", new THREE.BoxGeometry(1.1, 0.9, 0.3), [0, 1.75, 0.35]);
+  addPart(group, parts, "lombaires", new THREE.BoxGeometry(1.1, 0.9, 0.3), [0, 1.75, -0.35]);
 
-  addPart(group, parts, baseMaterial, "epaules", new THREE.SphereGeometry(0.32, 16, 16), [-0.95, 3.15, 0]);
-  addPart(group, parts, baseMaterial, "epaules", new THREE.SphereGeometry(0.32, 16, 16), [0.95, 3.15, 0]);
+  addPart(group, parts, "epaules", new THREE.SphereGeometry(0.32, 16, 16), [-0.95, 3.15, 0]);
+  addPart(group, parts, "epaules", new THREE.SphereGeometry(0.32, 16, 16), [0.95, 3.15, 0]);
 
   for (const side of [-1, 1]) {
-    addPart(group, parts, baseMaterial, "biceps", new THREE.CapsuleGeometry(0.18, 0.9, 4, 8), [side * 1.15, 2.6, 0.12]);
-    addPart(group, parts, baseMaterial, "triceps", new THREE.CapsuleGeometry(0.18, 0.9, 4, 8), [side * 1.15, 2.6, -0.12]);
+    addPart(group, parts, "biceps", new THREE.CapsuleGeometry(0.18, 0.9, 4, 8), [side * 1.15, 2.6, 0.12]);
+    addPart(group, parts, "triceps", new THREE.CapsuleGeometry(0.18, 0.9, 4, 8), [side * 1.15, 2.6, -0.12]);
   }
 
-  addPart(group, parts, baseMaterial, "fessiers", new THREE.BoxGeometry(1.1, 0.5, 0.4), [0, 1.05, -0.1]);
+  addPart(group, parts, "fessiers", new THREE.BoxGeometry(1.1, 0.5, 0.4), [0, 1.05, -0.1]);
 
   for (const side of [-1, 1]) {
-    addPart(group, parts, baseMaterial, "quadriceps", new THREE.CapsuleGeometry(0.24, 1.1, 4, 8), [side * 0.35, 0.35, 0.15]);
-    addPart(group, parts, baseMaterial, "ischio_jambiers", new THREE.CapsuleGeometry(0.22, 1.1, 4, 8), [side * 0.35, 0.35, -0.15]);
+    addPart(group, parts, "quadriceps", new THREE.CapsuleGeometry(0.24, 1.1, 4, 8), [side * 0.35, 0.35, 0.15]);
+    addPart(group, parts, "ischio_jambiers", new THREE.CapsuleGeometry(0.22, 1.1, 4, 8), [side * 0.35, 0.35, -0.15]);
   }
 
   for (const side of [-1, 1]) {
-    addPart(group, parts, baseMaterial, "mollets", new THREE.CapsuleGeometry(0.18, 0.9, 4, 8), [side * 0.35, -0.9, -0.05]);
+    addPart(group, parts, "mollets", new THREE.CapsuleGeometry(0.18, 0.9, 4, 8), [side * 0.35, -0.9, -0.05]);
   }
 
   return { group, parts };
@@ -58,7 +106,16 @@ export function buildBody() {
 export function setMuscleHighlighted(parts, muscleId, isSelected) {
   for (const mesh of parts) {
     if (mesh.userData.muscleId !== muscleId) continue;
-    mesh.material.emissive = new THREE.Color(isSelected ? HIGHLIGHT_COLOR : 0x000000);
-    mesh.material.emissiveIntensity = isSelected ? 0.9 : 0;
+    mesh.userData.selected = isSelected;
+    if (!isSelected) mesh.material.uniforms.glowIntensity.value = BASE_GLOW_INTENSITY;
+  }
+}
+
+// A appeler a chaque frame : fait pulser doucement le glow des muscles
+// selectionnes (effet "actif/scanne"), sans toucher aux muscles neutres.
+export function updateHologramPulse(parts, elapsedSeconds) {
+  const pulse = SELECTED_GLOW_INTENSITY * (0.7 + 0.3 * Math.sin(elapsedSeconds * 2.4));
+  for (const mesh of parts) {
+    if (mesh.userData.selected) mesh.material.uniforms.glowIntensity.value = pulse;
   }
 }
