@@ -1,7 +1,7 @@
 import "./styles/app.css";
 import { createVoiceCoach } from "./audio/coach.js";
 import { createPoseLandmarker } from "./core/poseEngine.js";
-import { loadGroupSession, saveGroupSession, clearGroupSession } from "./auth/groupGate.js";
+import { loadUsername, saveUsername, clearUsername } from "./auth/groupGate.js";
 import { renderGateScreen } from "./ui/screens/gate.js";
 import { renderHomeScreen } from "./ui/screens/home.js";
 import { renderSessionScreen } from "./ui/screens/session.js";
@@ -10,7 +10,7 @@ import { renderLeaderboardScreen } from "./ui/screens/leaderboard.js";
 const root = document.getElementById("app");
 const voiceCoach = createVoiceCoach();
 
-let groupSession = loadGroupSession();
+let username = loadUsername();
 let cleanupCurrent = null;
 let landmarkerPromise = null;
 
@@ -23,14 +23,14 @@ const ctx = {
   voiceCoach,
   getPoseLandmarker,
   navigate,
-  getGroupSession: () => groupSession,
-  setGroupSession(session) {
-    groupSession = session;
-    saveGroupSession(session);
+  getUsername: () => username,
+  setUsername(value) {
+    username = value;
+    saveUsername(value);
   },
   logout() {
-    groupSession = null;
-    clearGroupSession();
+    username = null;
+    clearUsername();
     navigate("gate");
   }
 };
@@ -55,7 +55,7 @@ function navigate(screen) {
   }
 }
 
-navigate(groupSession ? "home" : "gate");
+navigate(username ? "home" : "gate");
 
 // L'enregistrement du service worker est gere automatiquement par
 // vite-plugin-pwa (registerType: "autoUpdate", injectRegister: "auto").

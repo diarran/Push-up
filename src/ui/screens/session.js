@@ -3,13 +3,13 @@ import { startCameraStream, stopCameraStream } from "../../core/cameraStream.js"
 import { createRepCounter } from "../../core/repCounter.js";
 import { pickSide } from "../../core/landmarks.js";
 import { angleAt, areVisible } from "../../core/geometry.js";
-import { submitScore } from "../../db/scores.js";
+import { submitSession } from "../../db/historique.js";
 
 const VIS_THRESHOLD = 0.55;
 const ALIGN_ANGLE = 160;
 
 export function renderSessionScreen(root, ctx) {
-  const { username, passcode } = ctx.getGroupSession();
+  const username = ctx.getUsername();
   const voiceCoach = ctx.voiceCoach;
 
   const el = document.createElement("div");
@@ -56,7 +56,6 @@ export function renderSessionScreen(root, ctx) {
   let canvasReady = false;
   let lastVideoTime = -1;
   let rafId = null;
-  let sessionStartedAt = 0;
   let ended = false;
 
   function setMessage(text, type) {
@@ -152,7 +151,6 @@ export function renderSessionScreen(root, ctx) {
       drawingUtils = new DrawingUtils(ctx2d);
 
       active = true;
-      sessionStartedAt = Date.now();
       setMessage("Mets-toi dans le cadre", "neutral");
       voiceCoach.announceSessionStart();
       renderLoop();
@@ -174,16 +172,15 @@ export function renderSessionScreen(root, ctx) {
     if (ended) return;
     ended = true;
 
-    const durationSeconds = (Date.now() - sessionStartedAt) / 1000;
     const finalCount = repCounter.count;
     cleanup();
     voiceCoach.announceSessionEnd(finalCount);
 
     if (finalCount > 0) {
       try {
-        await submitScore({ passcode, username, reps: finalCount, durationSeconds });
+        await submitSession({ username, reps: finalCount });
       } catch (err) {
-        console.error("Enregistrement du score impossible", err);
+        console.error("Enregistrement de la seance impossible", err);
       }
     }
 

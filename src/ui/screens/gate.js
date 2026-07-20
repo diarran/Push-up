@@ -1,4 +1,5 @@
-import { verifyPasscode, ScoresError } from "../../db/scores.js";
+import { checkGroupPasscode } from "../../auth/groupGate.js";
+import { ensureUser, HistoriqueError } from "../../db/historique.js";
 import { isSupabaseConfigured } from "../../lib/supabaseClient.js";
 
 export function renderGateScreen(root, ctx) {
@@ -42,14 +43,14 @@ export function renderGateScreen(root, ctx) {
     const username = el.querySelector("#usernameInput").value.trim();
 
     try {
-      const valid = await verifyPasscode(passcode);
-      if (!valid) throw new ScoresError("Code d'acces incorrect");
-      if (!username) throw new ScoresError("Pseudo requis");
+      if (!checkGroupPasscode(passcode)) throw new HistoriqueError("Code d'acces incorrect");
+      if (!username) throw new HistoriqueError("Pseudo requis");
 
-      ctx.setGroupSession({ passcode, username });
+      await ensureUser(username);
+      ctx.setUsername(username);
       ctx.navigate("home");
     } catch (err) {
-      errorEl.textContent = err instanceof ScoresError ? err.message : "Erreur de connexion, reessaie";
+      errorEl.textContent = err instanceof HistoriqueError ? err.message : "Erreur de connexion, reessaie";
       errorEl.hidden = false;
       submitBtn.disabled = false;
       submitBtn.textContent = "Entrer";

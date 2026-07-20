@@ -1,9 +1,9 @@
-import { fetchLeaderboard, ScoresError } from "../../db/scores.js";
+import { fetchLeaderboard, HistoriqueError } from "../../db/historique.js";
 import { escapeHtml } from "../escapeHtml.js";
 import { renderTopNav } from "../nav.js";
 
 export function renderLeaderboardScreen(root, ctx) {
-  const { username, passcode } = ctx.getGroupSession();
+  const username = ctx.getUsername();
 
   const el = document.createElement("div");
   el.className = "screen leaderboardScreen";
@@ -25,7 +25,7 @@ export function renderLeaderboardScreen(root, ctx) {
   async function load() {
     const list = el.querySelector("#leaderboardList");
     try {
-      const rows = await fetchLeaderboard(passcode);
+      const rows = await fetchLeaderboard();
       if (rows.length === 0) {
         list.innerHTML = '<p class="emptyState">Aucun score enregistre pour l\'instant.</p>';
         return;
@@ -45,7 +45,7 @@ export function renderLeaderboardScreen(root, ctx) {
         )
         .join("");
     } catch (err) {
-      const message = err instanceof ScoresError ? err.message : "Erreur de chargement";
+      const message = err instanceof HistoriqueError ? err.message : "Erreur de chargement";
       list.innerHTML = `<p class="errorText">${escapeHtml(message)}</p>`;
     }
   }

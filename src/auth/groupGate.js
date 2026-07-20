@@ -1,25 +1,28 @@
-// Acces au groupe : un mot de passe partage + un pseudo libre, memorises
-// localement pour ne demander l'information qu'une seule fois par appareil.
-// Aucun compte, aucun mot de passe individuel, aucune recuperation de compte.
+// Acces au groupe : verifie une seule fois contre un mot de passe partage
+// (cote client), puis seul le pseudo est memorise localement pour ne pas
+// redemander l'information a chaque visite. Aucun compte, aucun mot de
+// passe individuel.
 
-const STORAGE_KEY = "bsePushUp.groupSession.v1";
+const STORAGE_KEY = "bsePushUp.username.v1";
 
-export function loadGroupSession() {
+export function loadUsername() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || !parsed.passcode || !parsed.username) return null;
-    return parsed;
+    const value = localStorage.getItem(STORAGE_KEY);
+    return value && value.trim() ? value : null;
   } catch (err) {
     return null;
   }
 }
 
-export function saveGroupSession({ passcode, username }) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ passcode, username }));
+export function saveUsername(username) {
+  localStorage.setItem(STORAGE_KEY, username);
 }
 
-export function clearGroupSession() {
+export function clearUsername() {
   localStorage.removeItem(STORAGE_KEY);
+}
+
+export function checkGroupPasscode(passcode) {
+  const expected = import.meta.env.VITE_GROUP_PASSCODE;
+  return Boolean(expected) && passcode === expected;
 }

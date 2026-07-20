@@ -14,9 +14,10 @@ personnes), pas pour un usage grand public.
   versions du prototype, aujourd'hui depreciees)
 - **Voix** : Web Speech API (`SpeechSynthesis`) native au navigateur, aucun
   service tiers, fonctionne hors ligne
-- **Backend** : Supabase (Postgres), utilise uniquement comme base de
-  donnees via des fonctions RPC. Pas de comptes individuels : un mot de
-  passe de groupe unique protege l'ecriture et la lecture des scores
+- **Backend** : Supabase (Postgres), deux tables (`utilisateurs`,
+  `historique`) en lecture/ecriture ouvertes. Pas de comptes individuels :
+  un mot de passe de groupe unique, verifie uniquement cote client, filtre
+  l'entree dans l'application
 - **PWA** : `vite-plugin-pwa` (manifest deja fourni dans `public/`, service
   worker genere automatiquement au build)
 
@@ -25,10 +26,10 @@ src/
   core/       geometrie, machine a etats du compteur, moteur de pose, camera
   audio/      coach vocal (file d'attente, anti-spam, encouragements)
   lib/        client Supabase
-  auth/       gestion locale de la session de groupe (mot de passe + pseudo)
-  db/         appels RPC Supabase (scores, classement)
+  auth/       gestion locale du pseudo + verification du mot de passe de groupe
+  db/         acces direct aux tables Supabase (historique, classement)
   ui/         ecrans (gate, home, session, leaderboard) et navigation
-supabase/migrations/0001_init.sql   schema complet + fonctions d'acces
+supabase/migrations/0001_init.sql   schema complet (tables + policies)
 public/       manifest PWA, icones
 ```
 
@@ -39,40 +40,35 @@ email (inscription, confirmation, mot de passe oublie) serait une charge
 inutile pour cet usage. A la place :
 
 - un **mot de passe de groupe** unique, partage entre les membres, verifie
-  cote serveur avant toute lecture ou ecriture
+  uniquement cote client (comparaison avec `VITE_GROUP_PASSCODE`) avant
+  d'entrer dans l'application
 - un **pseudo libre**, saisi une fois et memorise sur l'appareil
 
-Le mot de passe et le pseudo sont mis en cache dans `localStorage` : chaque
-personne ne les saisit qu'une seule fois par appareil.
-
-Limite assumee : la cle publique Supabase (`anon key`) est necessairement
-visible dans le code cote client, comme pour toute application front-end
-statique. Le mot de passe de groupe est donc une barriere pour decourager un
-inconnu qui tomberait sur le lien de l'application, pas une protection de
-niveau entreprise. Elle est neanmoins verifiee cote serveur (fonctions
-Postgres `security definer`), pas seulement cote interface : la table
-`scores` n'est accessible par aucune policy publique, uniquement via les
-fonctions qui verifient le mot de passe.
+Limite assumee, deliberement : les tables `utilisateurs` et `historique`
+sont en lecture/ecriture ouvertes (policies RLS `using (true)`), pour que
+le classement reste simple et instantane entre les dix membres du groupe.
+La cle publique Supabase (`anon key`) est de toute facon visible dans le
+code cote client, comme pour toute application front-end statique ; le mot
+de passe de groupe est donc une barriere pour decourager un inconnu qui
+tomberait sur le lien de l'application, pas une protection de niveau
+entreprise. Si ce niveau de protection devient insuffisant un jour (fuite
+du lien, groupe qui grandit), il faudra revenir a un acces verifie cote
+serveur (fonctions Postgres `security definer`, comme dans une version
+precedente de ce depot).
 
 ## Mise en place de Supabase
 
 1. Creer un projet gratuit sur supabase.com.
 2. Ouvrir l'editeur SQL du projet et executer l'integralite du fichier
    `supabase/migrations/0001_init.sql`.
-3. A la fin de ce meme fichier, remplacer `'change-me'` par le mot de passe
-   de groupe reel avant de l'executer (ou modifier la ligne directement
-   dans l'editeur SQL apres coup) :
-   ```sql
-   update public.app_config set group_passcode = 'votre-mot-de-passe';
-   ```
-4. Dans Project Settings > API, recuperer l'URL du projet et la cle
+3. Dans Project Settings > API, recuperer l'URL du projet et la cle
    publique (`anon public key`).
 
 ## Configuration locale
 
 ```bash
 cp .env.example .env
-# renseigner VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY dans .env
+# renseigner VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY et VITE_GROUP_PASSCODE dans .env
 npm install
 npm run dev
 ```
@@ -125,6 +121,13 @@ Un bouton "Voix" dans l'ecran de seance permet de la couper a tout moment.
 - Le pseudo n'est pas normalise : deux saisies differentes (majuscules,
   espaces) creent deux entrees distinctes dans le classement. Chacun doit
   garder le meme pseudo.
+- Les tables Supabase sont ouvertes en lecture/ecriture : voir la section
+  "Pourquoi pas de comptes individuels" ci-dessus pour le detail du
+  compromis et comment revenir en arriere si besoin.
 - Pas de recuperation d'acces si le mot de passe de groupe change : il faut
   alors redemander a chacun de le ressaisir (bouton "Changer de pseudo ou
   de code" sur l'ecran d'accueil).
+- Seul l'exercice "Pompes" est enregistre pour l'instant ; les colonnes
+  `nom_exercice` et `muscles_travailles` existent en base avec des valeurs
+  fixes, prêtes pour un futur choix d'exercice sans migration
+  supplementaire.

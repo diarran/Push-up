@@ -11,9 +11,3 @@ export function formatShortDate(dateStr) {
   const d = new Date(`${dateStr}T00:00:00`);
   return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
-
-export function formatDuration(totalSeconds) {
-  const m = Math.floor(totalSeconds / 60);
-  const s = Math.round(totalSeconds % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}

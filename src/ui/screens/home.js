@@ -1,10 +1,10 @@
-import { fetchLeaderboard, fetchUserSessions, ScoresError } from "../../db/scores.js";
-import { formatShortDate, formatDuration } from "../../core/date.js";
+import { fetchLeaderboard, fetchUserSessions, HistoriqueError } from "../../db/historique.js";
+import { formatShortDate } from "../../core/date.js";
 import { escapeHtml } from "../escapeHtml.js";
 import { renderTopNav } from "../nav.js";
 
 export function renderHomeScreen(root, ctx) {
-  const { username, passcode } = ctx.getGroupSession();
+  const username = ctx.getUsername();
 
   // Precharge le modele de detection de pose en arriere-plan pour reduire
   // le temps d'attente au moment ou l'utilisateur lance sa seance.
@@ -44,8 +44,8 @@ export function renderHomeScreen(root, ctx) {
   async function load() {
     try {
       const [leaderboard, sessions] = await Promise.all([
-        fetchLeaderboard(passcode),
-        fetchUserSessions(passcode, username, 10)
+        fetchLeaderboard(),
+        fetchUserSessions(username, 10)
       ]);
 
       const own = leaderboard.find((row) => row.username === username);
@@ -61,17 +61,14 @@ export function renderHomeScreen(root, ctx) {
           .map(
             (s) => `
           <div class="historyItem">
-            <div>
-              <div class="hDate">${formatShortDate(s.performedOn)}</div>
-              <div class="hMeta">${formatDuration(s.durationSeconds)} min</div>
-            </div>
+            <div class="hDate">${formatShortDate(s.performedOn)}</div>
             <div class="hReps">${s.reps}</div>
           </div>`
           )
           .join("");
       }
     } catch (err) {
-      const message = err instanceof ScoresError ? err.message : "Erreur de chargement";
+      const message = err instanceof HistoriqueError ? err.message : "Erreur de chargement";
       el.querySelector("#historyList").innerHTML = `<p class="errorText">${escapeHtml(message)}</p>`;
     }
   }
