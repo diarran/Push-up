@@ -196,6 +196,20 @@ niveau et les bornes de charge par serie sont dans
 `src/workout/generator.js` (`BASE_SETS_BY_LEVEL`, `MIN_REPS`/`MAX_REPS`,
 `MIN_HOLD_SECONDS`/`MAX_HOLD_SECONDS`).
 
+Chaque definition separe les points indispensables au comptage
+(`corePointKeys`, ex. epaule-coude-poignet pour les pompes) des points
+utilises uniquement pour le controle de forme (`formPointKeys`, ex.
+hanche-cheville pour l'alignement). Si les points de forme ne sont pas
+assez visibles (chevilles hors cadre, frequent selon l'angle de camera),
+le controle de forme est simplement ignore pour cette frame plutot que
+de bloquer tout le comptage : mieux vaut valider une repetition sans
+verifier la forme que ne jamais la valider a cause d'un pied hors champ.
+La selection du cote (gauche/droit) le plus visible utilise aussi une
+hysteresis (`pickSideGeneric` dans `src/core/landmarks.js`) : en cas
+d'ambiguite proche, le cote choisi la frame precedente est conserve
+plutot que recalcule independamment, pour eviter que l'angle mesure ne
+saute de maniere erratique.
+
 ## Coach vocal
 
 `src/audio/coach.js` gere une file d'attente courte (3 messages maximum),

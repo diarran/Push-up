@@ -7,7 +7,7 @@ export const pushupExercise = {
   label: "Pompes",
   mode: "reps",
   muscles: ["pectoraux", "triceps", "epaules"],
-  visThreshold: 0.55,
+  visThreshold: 0.5,
   points: {
     shoulder: [LM.L_SHOULDER, LM.R_SHOULDER],
     elbow: [LM.L_ELBOW, LM.R_ELBOW],
@@ -15,11 +15,16 @@ export const pushupExercise = {
     hip: [LM.L_HIP, LM.R_HIP],
     ankle: [LM.L_ANKLE, LM.R_ANKLE]
   },
+  // Indispensables pour compter : epaule-coude-poignet. Les chevilles
+  // sortent souvent du cadre selon l'angle de camera ; ca ne doit pas
+  // empecher de valider une repetition par ailleurs correcte.
+  corePointKeys: ["shoulder", "elbow", "wrist"],
+  formPointKeys: ["shoulder", "hip", "ankle"],
   createState: () => createAngleRepCounter({ downAngle: 90, upAngle: 160 }),
-  computeMetrics(points) {
+  computeMetrics(points, formVisible) {
     const primaryAngle = angleAt(points.shoulder, points.elbow, points.wrist);
-    const alignAngle = angleAt(points.shoulder, points.hip, points.ankle);
-    return { primaryAngle, alignOk: alignAngle >= 160 };
+    const alignAngle = formVisible ? angleAt(points.shoulder, points.hip, points.ankle) : null;
+    return { primaryAngle, alignOk: alignAngle === null || alignAngle >= 150 };
   },
   messages: {
     ready: "Pret",

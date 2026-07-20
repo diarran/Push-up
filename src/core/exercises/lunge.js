@@ -18,11 +18,13 @@ export const lungeExercise = {
     knee: [LM.L_KNEE, LM.R_KNEE],
     ankle: [LM.L_ANKLE, LM.R_ANKLE]
   },
+  corePointKeys: ["hip", "knee", "ankle"],
+  formPointKeys: ["shoulder", "hip", "knee"],
   createState: () => createAngleRepCounter({ downAngle: 100, upAngle: 165 }),
-  computeMetrics(points) {
+  computeMetrics(points, formVisible) {
     const primaryAngle = angleAt(points.hip, points.knee, points.ankle);
-    const torsoAngle = angleAt(points.shoulder, points.hip, points.knee);
-    return { primaryAngle, alignOk: torsoAngle >= 120 };
+    const torsoAngle = formVisible ? angleAt(points.shoulder, points.hip, points.knee) : null;
+    return { primaryAngle, alignOk: torsoAngle === null || torsoAngle >= 120 };
   },
   messages: {
     ready: "Pret",

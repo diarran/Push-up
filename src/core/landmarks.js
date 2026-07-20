@@ -16,19 +16,35 @@ export const LM = {
 
 // pointSpec : { nomDuPoint: [indexGauche, indexDroit], ... }
 // Choisit le cote (gauche ou droit) le plus visible globalement, puis
-// retourne { nomDuPoint: landmark } pour ce cote. Chaque exercice definit
-// son propre pointSpec (voir src/core/exercises/*.js).
-export function pickSideGeneric(lms, pointSpec) {
+// retourne { side, points } pour ce cote. Chaque exercice definit son
+// propre pointSpec (voir src/core/exercises/*.js).
+//
+// preferredSide/margin : quand les deux cotes sont a peu pres aussi
+// visibles (cas frequent, la camera ne voit pas parfaitement de profil),
+// on reste sur le cote deja choisi la frame precedente plutot que de
+// recalculer independamment a chaque frame. Sans ca, le cote choisi peut
+// osciller frame apres frame et faire sauter l'angle mesure de maniere
+// erratique, ce qui casse la machine a etats du compteur (des repetitions
+// pourtant bien executees ne se valident pas).
+export function pickSideGeneric(lms, pointSpec, preferredSide = null, margin = 0.4) {
   const visibilityOf = (p) => (p && p.visibility !== undefined ? p.visibility : 0);
 
   const sumSide = (side) =>
     Object.values(pointSpec).reduce((total, [left, right]) => total + visibilityOf(lms[side === "left" ? left : right]), 0);
 
-  const side = sumSide("left") >= sumSide("right") ? "left" : "right";
+  const leftSum = sumSide("left");
+  const rightSum = sumSide("right");
+
+  let side;
+  if (preferredSide && Math.abs(leftSum - rightSum) < margin) {
+    side = preferredSide;
+  } else {
+    side = leftSum >= rightSum ? "left" : "right";
+  }
 
   const points = {};
   for (const [name, [left, right]] of Object.entries(pointSpec)) {
     points[name] = lms[side === "left" ? left : right];
   }
-  return points;
+  return { side, points };
 }

@@ -7,18 +7,23 @@ export const squatExercise = {
   label: "Squats",
   mode: "reps",
   muscles: ["quadriceps", "fessiers", "ischio_jambiers"],
-  visThreshold: 0.55,
+  visThreshold: 0.5,
   points: {
     shoulder: [LM.L_SHOULDER, LM.R_SHOULDER],
     hip: [LM.L_HIP, LM.R_HIP],
     knee: [LM.L_KNEE, LM.R_KNEE],
     ankle: [LM.L_ANKLE, LM.R_ANKLE]
   },
+  // L'angle principal (genou) ne depend pas de l'epaule : si le buste
+  // sort du cadre, on peut quand meme compter, juste sans le controle de
+  // forme (torse).
+  corePointKeys: ["hip", "knee", "ankle"],
+  formPointKeys: ["shoulder", "hip", "knee"],
   createState: () => createAngleRepCounter({ downAngle: 100, upAngle: 165 }),
-  computeMetrics(points) {
+  computeMetrics(points, formVisible) {
     const primaryAngle = angleAt(points.hip, points.knee, points.ankle);
-    const torsoAngle = angleAt(points.shoulder, points.hip, points.knee);
-    return { primaryAngle, alignOk: torsoAngle >= 130 };
+    const torsoAngle = formVisible ? angleAt(points.shoulder, points.hip, points.knee) : null;
+    return { primaryAngle, alignOk: torsoAngle === null || torsoAngle >= 130 };
   },
   messages: {
     ready: "Pret",
