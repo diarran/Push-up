@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+<title>Coach Pompes IA</title>
+<style>
+  :root {
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    overscroll-behavior: none;
+  }
+
+  #app {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    background: #000;
+  }
+
+  /* ---------- Ecran de démarrage ---------- */
+  #startScreen {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 22px;
+    padding: 24px;
+    text-align: center;
+    background: radial-gradient(circle at 50% 20%, #1a1a1a 0%, #000 70%);
+  }
+  #startScreen h1 {
+    color: #fff;
+    font-size: 1.6rem;
+    margin: 0;
+  }
+  #startScreen p {
+    color: #999;
+    font-size: 0.95rem;
+    max-width: 320px;
+    line-height: 1.4;
+    margin: 0;
+  }
+  #startBtn {
+    background: #00e676;
+    color: #001a0a;
+    border: none;
+    padding: 18px 40px;
+    border-radius: 999px;
+    font-size: 1.1rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 24px rgba(0, 230, 118, 0.35);
+  }
+  #startBtn:active { transform: scale(0.97); }
+  #errorBox {
+    color: #ff5252;
+    font-size: 0.85rem;
+    max-width: 320px;
+    display: none;
+  }
+
+  /* ---------- Vue caméra ---------- */
+  #videoWrap {
+    position: absolute;
+    inset: 0;
+    display: none;
+    background: #000;
+  }
+  video { display: none; }
+  canvas#output {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* effet miroir naturel caméra frontale */
+  }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)) 14px;
+  }
+
+  #topBar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  #counterBox {
+    background: rgba(20, 20, 20, 0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 20px;
+    padding: 10px 22px;
+    text-align: center;
+    pointer-events: auto;
+  }
+  #counter {
+    font-size: 3.2rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+  }
+  #counterLabel {
+    font-size: 0.65rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #aaa;
+  }
+
+  #debugBox {
+    background: rgba(20, 20, 20, 0.55);
+    backdrop-filter: blur(8px);
+    border-radius: 14px;
+    padding: 8px 12px;
+    font-size: 0.7rem;
+    color: #ccc;
+    line-height: 1.5;
+    min-width: 118px;
+    display: none;
+    pointer-events: auto;
+  }
+  #debugBox.visible { display: block; }
+
+  #debugToggle {
+    position: absolute;
+    top: max(14px, env(safe-area-inset-top));
+    right: 14px;
+    background: rgba(20,20,20,0.55);
+    color: #888;
+    border: none;
+    border-radius: 12px;
+    padding: 6px 10px;
+    font-size: 0.65rem;
+    pointer-events: auto;
+    z-index: 11;
+  }
+
+  #messageBanner {
+    align-self: center;
+    padding: 14px 26px;
+    border-radius: 16px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    text-align: center;
+    color: #fff;
+    background: rgba(60, 60, 60, 0.55);
+    backdrop-filter: blur(8px);
+    transition: background 0.15s ease, transform 0.15s ease;
+    max-width: 90%;
+  }
+  #messageBanner.error { background: rgba(211, 47, 47, 0.85); }
+  #messageBanner.success { background: rgba(0, 200, 83, 0.88); transform: scale(1.05); }
+  #messageBanner.neutral { background: rgba(60, 60, 60, 0.55); }
+  #messageBanner.warn { background: rgba(255, 152, 0, 0.85); }
+
+  #stagePill {
+    align-self: center;
+    margin-top: 10px;
+    font-size: 0.75rem;
+    color: #ccc;
+    background: rgba(20,20,20,0.5);
+    padding: 4px 12px;
+    border-radius: 999px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="startScreen">
+    <h1>💪 Coach Pompes IA</h1>
+    <p>Place ton iPhone contre un mur ou en appui, recule-toi pour que ton buste et tes jambes soient visibles de profil, puis lance la séance.</p>
+    <button id="startBtn">Démarrer la séance</button>
+    <div id="errorBox"></div>
+  </div>
+
+  <div id="videoWrap">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="output"></canvas>
+  </div>
+
+  <button id="debugToggle" style="display:none;">Debug</button>
+
+  <div id="hud" style="display:none;">
+    <div id="topBar">
+      <div id="counterBox">
+        <div id="counter">0</div>
+        <div id="counterLabel">Pompes</div>
+      </div>
+      <div id="debugBox"></div>
+    </div>
+
+    <div>
+      <div id="messageBanner" class="neutral">Positionne-toi dans le cadre</div>
+      <div id="stagePill">Phase: HAUT</div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ============ CONFIGURATION (à ajuster pendant les tests) ============
+  const CFG = {
+    DOWN_ANGLE: 90,     // coude plié à <= 90° => bas atteint
+    UP_ANGLE: 160,      // coude tendu à >= 160° => haut atteint
+    ALIGN_ANGLE: 160,   // angle épaule-hanche-cheville mini pour considérer le dos droit
+    VIS_THRESHOLD: 0.55,
+    MODEL_COMPLEXITY: 1 // 0 = plus rapide/moins précis, 1 = équilibré, 2 = précis/lourd
+  };
+
+  const LM = {
+    L_SHOULDER: 11, R_SHOULDER: 12,
+    L_ELBOW: 13, R_ELBOW: 14,
+    L_WRIST: 15, R_WRIST: 16,
+    L_HIP: 23, R_HIP: 24,
+    L_ANKLE: 27, R_ANKLE: 28
+  };
+
+  // ============ ELEMENTS ============
+  const startScreen = document.getElementById("startScreen");
+  const startBtn = document.getElementById("startBtn");
+  const errorBox = document.getElementById("errorBox");
+  const videoWrap = document.getElementById("videoWrap");
+  const videoEl = document.getElementById("video");
+  const canvasEl = document.getElementById("output");
+  const ctx = canvasEl.getContext("2d");
+  const hud = document.getElementById("hud");
+  const counterEl = document.getElementById("counter");
+  const messageBanner = document.getElementById("messageBanner");
+  const stagePill = document.getElementById("stagePill");
+  const debugBox = document.getElementById("debugBox");
+  const debugToggle = document.getElementById("debugToggle");
+
+  debugToggle.addEventListener("click", () => {
+    debugBox.classList.toggle("visible");
+  });
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.style.display = "block";
+  }
+
+  // ============ ETAT DU COACH IA ============
+  let repCount = 0;
+  let stage = "up"; // "up" | "down"
+  let formBrokenThisRep = false;
+  let lastMessageAt = 0;
+
+  function setMessage(text, type) {
+    messageBanner.textContent = text;
+    messageBanner.className = type;
+    lastMessageAt = performance.now();
+  }
+
+  function setStagePill() {
+    stagePill.textContent = "Phase: " + (stage === "up" ? "HAUT" : "BAS");
+  }
+
+  // ============ GEOMETRIE ============
+  function angleAt(a, b, c) {
+    // angle au sommet b, formé par b->a et b->c, en degrés
+    const rad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+    let deg = Math.abs((rad * 180) / Math.PI);
+    if (deg > 180) deg = 360 - deg;
+    return deg;
+  }
+
+  function visOk(...pts) {
+    return pts.every((p) => p && (p.visibility === undefined || p.visibility >= CFG.VIS_THRESHOLD));
+  }
+
+  function pickSide(lms) {
+    const leftPts = [lms[LM.L_SHOULDER], lms[LM.L_ELBOW], lms[LM.L_WRIST], lms[LM.L_HIP], lms[LM.L_ANKLE]];
+    const rightPts = [lms[LM.R_SHOULDER], lms[LM.R_ELBOW], lms[LM.R_WRIST], lms[LM.R_HIP], lms[LM.R_ANKLE]];
+    const sum = (pts) => pts.reduce((s, p) => s + (p && p.visibility !== undefined ? p.visibility : 0), 0);
+    return sum(leftPts) >= sum(rightPts)
+      ? { shoulder: lms[LM.L_SHOULDER], elbow: lms[LM.L_ELBOW], wrist: lms[LM.L_WRIST], hip: lms[LM.L_HIP], ankle: lms[LM.L_ANKLE] }
+      : { shoulder: lms[LM.R_SHOULDER], elbow: lms[LM.R_ELBOW], wrist: lms[LM.R_WRIST], hip: lms[LM.R_HIP], ankle: lms[LM.R_ANKLE] };
+  }
+
+  // ============ LOGIQUE COACH (machine à états) ============
+  function evaluateRep(elbowAngle, alignOk) {
+    if (stage === "down" && !alignOk) formBrokenThisRep = true;
+
+    if (stage === "up") {
+      if (elbowAngle <= CFG.DOWN_ANGLE) {
+        stage = "down";
+        formBrokenThisRep = !alignOk;
+        setMessage(alignOk ? "Bas ! Remonte" : "🔴 Gaine ton bassin", alignOk ? "neutral" : "error");
+      } else if (elbowAngle < CFG.UP_ANGLE) {
+        setMessage("🔴 Descends plus bas", "error");
+      } else {
+        setMessage("Prêt", "neutral");
+      }
+    } else {
+      // stage === "down"
+      if (!alignOk) {
+        setMessage("🔴 Gaine ton bassin", "error");
+      } else if (elbowAngle <= CFG.DOWN_ANGLE) {
+        setMessage("Bas ! Remonte", "neutral");
+      } else if (elbowAngle < CFG.UP_ANGLE) {
+        setMessage("🔴 Tends les bras", "error");
+      } else {
+        // verrouillage haut atteint -> fin de répétition
+        stage = "up";
+        if (!formBrokenThisRep) {
+          repCount++;
+          counterEl.textContent = repCount;
+          setMessage("🟢 Super !", "success");
+        } else {
+          setMessage("🔴 Gaine ton bassin", "error");
+        }
+        formBrokenThisRep = false;
+      }
+    }
+    setStagePill();
+  }
+
+  // ============ MEDIAPIPE POSE ============
+  const pose = new Pose({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
+
+  pose.setOptions({
+    modelComplexity: CFG.MODEL_COMPLEXITY,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  let canvasReady = false;
+
+  function ensureCanvasSize() {
+    if (canvasReady) return;
+    if (videoEl.videoWidth && videoEl.videoHeight) {
+      canvasEl.width = videoEl.videoWidth;
+      canvasEl.height = videoEl.videoHeight;
+      canvasReady = true;
+    }
+  }
+
+  pose.onResults((results) => {
+    ensureCanvasSize();
+    if (!canvasReady) return;
+
+    ctx.save();
+    ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+    ctx.drawImage(results.image, 0, 0, canvasEl.width, canvasEl.height);
+
+    const lms = results.poseLandmarks;
+
+    if (!lms) {
+      setMessage("Positionne-toi dans le cadre", "neutral");
+      ctx.restore();
+      return;
+    }
+
+    window.drawConnectors(ctx, lms, window.POSE_CONNECTIONS, { color: "#00e676", lineWidth: 3 });
+    window.drawLandmarks(ctx, lms, { color: "#ffffff", lineWidth: 1, radius: 3 });
+
+    const side = pickSide(lms);
+
+    if (!visOk(side.shoulder, side.elbow, side.wrist, side.hip, side.ankle)) {
+      setMessage("Recule-toi, corps entier visible", "neutral");
+      ctx.restore();
+      return;
+    }
+
+    const elbowAngle = angleAt(side.shoulder, side.elbow, side.wrist);
+    const alignAngle = angleAt(side.shoulder, side.hip, side.ankle);
+    const alignOk = alignAngle >= CFG.ALIGN_ANGLE;
+
+    debugBox.innerHTML =
+      "Coude: " + elbowAngle.toFixed(0) + "°<br>" +
+      "Bassin: " + alignAngle.toFixed(0) + "°<br>" +
+      "Côté: " + (side === undefined ? "-" : "auto");
+
+    evaluateRep(elbowAngle, alignOk);
+
+    ctx.restore();
+  });
+
+  // ============ CAMERA (iOS Safari : démarrage sur geste utilisateur) ============
+  let camera = null;
+
+  async function startSession() {
+    startBtn.disabled = true;
+    errorBox.style.display = "none";
+
+    try {
+      if (typeof Camera === "undefined") {
+        throw new Error("La librairie caméra MediaPipe n'a pas pu être chargée (vérifie ta connexion).");
+      }
+
+      videoWrap.style.display = "block";
+      hud.style.display = "flex";
+      debugToggle.style.display = "block";
+      startScreen.style.display = "none";
+
+      camera = new Camera(videoEl, {
+        onFrame: async () => {
+          await pose.send({ image: videoEl });
+        },
+        facingMode: "user",
+        width: 720,
+        height: 1280
+      });
+
+      await camera.start();
+    } catch (err) {
+      startScreen.style.display = "flex";
+      videoWrap.style.display = "none";
+      hud.style.display = "none";
+      startBtn.disabled = false;
+      console.error(err);
+      if (err && err.name === "NotAllowedError") {
+        showError("Accès caméra refusé. Autorise la caméra dans Réglages > Safari > Caméra, puis réessaie.");
+      } else {
+        showError("Erreur caméra : " + (err && err.message ? err.message : err));
+      }
+    }
+  }
+
+  startBtn.addEventListener("click", startSession);
+})();
+</script>
+</body>
+</html>
