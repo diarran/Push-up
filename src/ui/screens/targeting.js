@@ -38,7 +38,7 @@ export function renderTargetingScreen(root, ctx) {
   scene.fog = new THREE.FogExp2(SCENE_BG, 0.05);
 
   const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
-  camera.position.set(0, 2, 7);
+  camera.position.set(0, 2, 11);
 
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   const pixelRatio = Math.min(window.devicePixelRatio, 2);
@@ -48,8 +48,8 @@ export function renderTargetingScreen(root, ctx) {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 2, 0);
   controls.enablePan = false;
-  controls.minDistance = 3;
-  controls.maxDistance = 12;
+  controls.minDistance = 4;
+  controls.maxDistance = 18;
   controls.update();
 
   // Grille technique au sol : pure ambiance "plateforme hologramme".

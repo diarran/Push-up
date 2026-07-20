@@ -5,8 +5,10 @@ import { getExercise } from "../../core/exercises/index.js";
 import { submitWorkoutResults } from "../../db/historique.js";
 import { withTimeout } from "../../core/withTimeout.js";
 import { muscleLabel } from "../../biomechanics/muscleGroups.js";
+import { REST_SECONDS } from "../../workout/generator.js";
 
 const SUBMIT_TIMEOUT_MS = 6000;
+const FLASH_DURATION_MS = 380;
 
 export function renderSessionScreen(root, ctx) {
   const username = ctx.getUsername();
@@ -23,6 +25,7 @@ export function renderSessionScreen(root, ctx) {
   el.innerHTML = `
     <video id="video" playsinline muted autoplay></video>
     <canvas id="output"></canvas>
+    <div id="repFlash" class="repFlash"></div>
     <div class="hud">
       <div class="topBar">
         <div class="counterBox">
@@ -32,7 +35,7 @@ export function renderSessionScreen(root, ctx) {
         </div>
         <div class="topRight">
           <button id="endBtn" class="dangerPill">Terminer</button>
-          <button id="voiceToggle" class="ghostPill"></button>
+          <button id="soundToggle" class="ghostPill"></button>
           <button id="debugToggle" class="ghostPill">Debug</button>
           <div id="debugBox" class="debugBox"></div>
         </div>
@@ -42,12 +45,18 @@ export function renderSessionScreen(root, ctx) {
         <div id="stagePill" class="stagePill"></div>
       </div>
     </div>
+    <div id="restOverlay" class="restOverlay" hidden>
+      <div class="restLabel">Repos</div>
+      <div class="restCountdown" id="restCountdown">0</div>
+      <div class="restNext" id="restNext"></div>
+    </div>
   `;
   root.appendChild(el);
 
   const video = el.querySelector("#video");
   const canvas = el.querySelector("#output");
   const ctx2d = canvas.getContext("2d");
+  const repFlash = el.querySelector("#repFlash");
   const exerciseLabelEl = el.querySelector("#exerciseLabel");
   const counterEl = el.querySelector("#counter");
   const counterLabelEl = el.querySelector("#counterLabel");
@@ -56,7 +65,10 @@ export function renderSessionScreen(root, ctx) {
   const debugBox = el.querySelector("#debugBox");
   const debugToggle = el.querySelector("#debugToggle");
   const endBtn = el.querySelector("#endBtn");
-  const voiceToggle = el.querySelector("#voiceToggle");
+  const soundToggle = el.querySelector("#soundToggle");
+  const restOverlay = el.querySelector("#restOverlay");
+  const restCountdown = el.querySelector("#restCountdown");
+  const restNext = el.querySelector("#restNext");
 
   let landmarker = null;
   let drawingUtils = null;
@@ -64,11 +76,12 @@ export function renderSessionScreen(root, ctx) {
   let canvasReady = false;
   let lastVideoTime = -1;
   let rafId = null;
+  let restIntervalId = null;
   let ended = false;
 
   let blockIndex = 0;
   let setIndex = 0;
-  let phase = "loading"; // "loading" | "working" | "finished"
+  let phase = "loading"; // "loading" | "working" | "resting" | "finished"
   let engine = null;
   const resultsByExercise = new Map();
 
@@ -90,15 +103,26 @@ export function renderSessionScreen(root, ctx) {
     messageBanner.className = `messageBanner ${type}`;
   }
 
-  function updateVoiceToggle() {
-    voiceToggle.textContent = voiceCoach.enabled ? "Voix : active" : "Voix : coupee";
+  // Flash plein ecran declenche a chaque repetition validee. Utilise le
+  // Web Animations API plutot qu'une classe CSS : ca gere nativement les
+  // declenchements rapproches (une nouvelle animation demarre a chaque
+  // appel sans avoir a reinitialiser un etat de classe).
+  function flashScreen() {
+    repFlash.animate(
+      [{ backgroundColor: "rgba(0, 230, 118, 0.7)" }, { backgroundColor: "rgba(0, 230, 118, 0)" }],
+      { duration: FLASH_DURATION_MS, easing: "ease-out" }
+    );
   }
-  updateVoiceToggle();
+
+  function updateSoundToggle() {
+    soundToggle.textContent = voiceCoach.enabled ? "Son : active" : "Son : coupe";
+  }
+  updateSoundToggle();
 
   debugToggle.addEventListener("click", () => debugBox.classList.toggle("visible"));
-  voiceToggle.addEventListener("click", () => {
+  soundToggle.addEventListener("click", () => {
     voiceCoach.setEnabled(!voiceCoach.enabled);
-    updateVoiceToggle();
+    updateSoundToggle();
   });
 
   function updateHud() {
@@ -125,11 +149,37 @@ export function renderSessionScreen(root, ctx) {
     const block = currentBlock();
     engine = createExerciseEngine(getExercise(block.exerciseId));
     phase = "working";
+    restOverlay.hidden = true;
     try {
       voiceCoach.announceExerciseIntro(block.label, setIndex + 1, block.sets);
     } finally {
       updateHud();
     }
+  }
+
+  function startRest(seconds, onDone) {
+    phase = "resting";
+    let remaining = seconds;
+    restOverlay.hidden = false;
+    restCountdown.textContent = remaining;
+    restNext.textContent = "";
+    voiceCoach.announceRestStart(seconds);
+
+    restIntervalId = setInterval(() => {
+      remaining -= 1;
+      restCountdown.textContent = Math.max(remaining, 0);
+      if (remaining <= 0) {
+        clearInterval(restIntervalId);
+        restIntervalId = null;
+        // onDone() doit s'executer meme si l'annonce vocale echoue : la
+        // reprise de la seance ne doit jamais dependre de la voix.
+        try {
+          voiceCoach.announceRestEnd();
+        } finally {
+          onDone();
+        }
+      }
+    }, 1000);
   }
 
   function finishSet() {
@@ -144,19 +194,19 @@ export function renderSessionScreen(root, ctx) {
       return;
     }
 
-    // Enchainement direct sur la serie ou l'exercice suivant, sans pause
-    // chronometree.
-    try {
-      if (isLastSetOfBlock) {
-        blockIndex += 1;
-        setIndex = 0;
-        voiceCoach.announceNextExercise(currentBlock().label);
-      } else {
-        setIndex += 1;
+    startRest(REST_SECONDS, () => {
+      try {
+        if (isLastSetOfBlock) {
+          blockIndex += 1;
+          setIndex = 0;
+          voiceCoach.announceNextExercise(currentBlock().label);
+        } else {
+          setIndex += 1;
+        }
+      } finally {
+        startSet();
       }
-    } finally {
-      startSet();
-    }
+    });
   }
 
   function stopCamera() {
@@ -171,6 +221,11 @@ export function renderSessionScreen(root, ctx) {
     if (ended) return;
     ended = true;
     phase = "finished";
+    if (restIntervalId) {
+      clearInterval(restIntervalId);
+      restIntervalId = null;
+    }
+    restOverlay.hidden = true;
     stopCamera();
 
     const exerciseCount = resultsByExercise.size;
@@ -237,6 +292,7 @@ export function renderSessionScreen(root, ctx) {
     updateHud();
 
     if (evalResult.repCompleted) {
+      flashScreen();
       voiceCoach.announceRepCount(engine.count);
     } else if (evalResult.type === "warning") {
       voiceCoach.announcePosture(evalResult.code, evalResult.message);
@@ -280,5 +336,6 @@ export function renderSessionScreen(root, ctx) {
 
   return () => {
     stopCamera();
+    if (restIntervalId) clearInterval(restIntervalId);
   };
 }

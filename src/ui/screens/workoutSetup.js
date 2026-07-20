@@ -1,6 +1,6 @@
 import { analyzeBalance } from "../../biomechanics/balanceRules.js";
 import { muscleLabel } from "../../biomechanics/muscleGroups.js";
-import { generateWorkout, deriveLevelFromHistory } from "../../workout/generator.js";
+import { generateWorkout, deriveLevelFromHistory, REST_SECONDS } from "../../workout/generator.js";
 import { fetchUserSessions } from "../../db/historique.js";
 import { withTimeout } from "../../core/withTimeout.js";
 import { escapeHtml } from "../escapeHtml.js";
@@ -108,7 +108,7 @@ export function renderWorkoutSetupScreen(root, ctx) {
         return `
         <div class="planBlock">
           <div class="planBlockLabel">${escapeHtml(block.label)}</div>
-          <div class="planBlockMeta">${block.sets} series de ${target}</div>
+          <div class="planBlockMeta">${block.sets} series de ${target}, repos ${REST_SECONDS} s</div>
         </div>`;
       })
       .join("");

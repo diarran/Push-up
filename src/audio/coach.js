@@ -3,6 +3,8 @@ import {
   ENCOURAGEMENT_LINES,
   sessionEndLine,
   exerciseIntroLine,
+  restStartLine,
+  REST_END_LINE,
   nextExerciseLine,
   workoutCompleteLine
 } from "./messages.js";
@@ -144,6 +146,16 @@ export function createVoiceCoach() {
     enqueue(exerciseIntroLine(label, setIndex, totalSets), { code: "exercise_intro" });
   }
 
+  function announceRestStart(seconds) {
+    clearQueue();
+    enqueue(restStartLine(seconds), { code: "rest_start" });
+  }
+
+  function announceRestEnd() {
+    clearQueue();
+    enqueue(REST_END_LINE, { code: "rest_end" });
+  }
+
   function announceNextExercise(label) {
     enqueue(nextExerciseLine(label), { code: "next_exercise" });
   }
@@ -179,6 +191,8 @@ export function createVoiceCoach() {
     maybeEncourage,
     announceSessionEnd,
     announceExerciseIntro,
+    announceRestStart,
+    announceRestEnd,
     announceNextExercise,
     announceWorkoutComplete,
     stop: clearQueue,

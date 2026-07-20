@@ -25,6 +25,12 @@ export function exerciseIntroLine(label, setIndex, totalSets) {
   return `${label}. Serie ${setIndex} sur ${totalSets}.`;
 }
 
+export function restStartLine(seconds) {
+  return `Repos, ${seconds} secondes.`;
+}
+
+export const REST_END_LINE = "Repos termine, en position.";
+
 export function nextExerciseLine(label) {
   return `Prochain exercice : ${label}.`;
 }

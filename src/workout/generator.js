@@ -9,6 +9,8 @@ const LEVEL_PRESETS = {
 };
 
 const SECONDS_PER_REP = 3;
+// Pause fixe apres chaque serie, identique pour tous les exercices.
+export const REST_SECONDS = 30;
 
 // Estime un niveau a partir des dernieres seances enregistrees (moyenne des
 // repetitions sur les 5 dernieres). A defaut d'historique, niveau moyen par
@@ -25,7 +27,7 @@ export function deriveLevelFromHistory(sessions) {
 
 function estimateBlockSeconds(block) {
   const workSeconds = block.mode === "hold" ? block.targetHoldSeconds : block.targetReps * SECONDS_PER_REP;
-  return block.sets * workSeconds;
+  return block.sets * (workSeconds + REST_SECONDS);
 }
 
 // { muscleIds, minutes, level } -> { level, blocks, estimatedMinutes }
