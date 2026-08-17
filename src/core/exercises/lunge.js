@@ -33,6 +33,7 @@ export const lungeExercise = {
     hold_bottom: "Bas, remonte",
     lock_out: "Tends la jambe",
     form_broken: "Garde le buste droit",
+    shallow_rep: "Pas assez bas, non comptee",
     rep_success: "Repetition validee"
   }
 };

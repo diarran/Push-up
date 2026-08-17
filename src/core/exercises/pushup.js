@@ -22,8 +22,13 @@ export const pushupExercise = {
   formPointKeys: ["shoulder", "hip", "ankle"],
   // Seuils assouplis (100/150 au lieu de 90/160) : mesures de profil, les
   // angles extremes sont rarement atteints par le modele, ce qui faisait
-  // perdre des repetitions pourtant completes.
-  createState: () => createAngleRepCounter({ downAngle: 100, upAngle: 150 }),
+  // perdre des repetitions pourtant completes. Exposes ici plutot que
+  // caches dans createState : l'ecran de seance les affiche en mode debug,
+  // a cote de l'angle mesure, pour pouvoir les regler sur le terrain.
+  thresholds: { downAngle: 100, upAngle: 150 },
+  createState() {
+    return createAngleRepCounter(this.thresholds);
+  },
   computeMetrics(points, formVisible) {
     const primaryAngle = angleAt(points.shoulder, points.elbow, points.wrist);
     const alignAngle = formVisible ? angleAt(points.shoulder, points.hip, points.ankle) : null;
@@ -36,6 +41,7 @@ export const pushupExercise = {
     hold_bottom: "Bas, remonte",
     lock_out: "Tends les bras",
     form_broken: "Gaine ton bassin",
+    shallow_rep: "Pas assez bas, non comptee",
     rep_success: "Repetition validee"
   }
 };

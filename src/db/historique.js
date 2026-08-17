@@ -42,17 +42,44 @@ export async function ensureUser(pseudo) {
 // seance. Pour un exercice "maintien" (planche), reps porte le nombre de
 // secondes tenues : la colonne repetitions n'a qu'une seule dimension
 // numerique disponible, on l'utilise dans ce sens pour cet exercice.
+// La colonne duree_secondes est ajoutee par la migration 0002. Tant
+// qu'elle n'a pas ete appliquee, la base refuse l'insertion : plutot que
+// de perdre la seance, on la reenregistre sans la duree. Une fois la
+// migration passee, la duree est enregistree sans rien changer au code.
+let durationColumnAvailable = true;
+
+function isMissingDurationColumn(err) {
+  const code = err && err.code;
+  const message = (err && err.message) || "";
+  return (code === "42703" || code === "PGRST204") && message.includes("duree_secondes");
+}
+
 async function submitExerciseResult({ username, exerciseLabel, muscles, reps, durationSeconds }) {
-  await execute(
-    supabase.from("historique").insert({
-      pseudo: username,
-      nom_exercice: exerciseLabel,
-      repetitions: Math.max(0, Math.round(reps)),
-      duree_secondes:
-        durationSeconds === null || durationSeconds === undefined ? null : Math.max(0, Math.round(durationSeconds)),
-      muscles_travailles: muscles.join(", ")
-    })
-  );
+  const row = {
+    pseudo: username,
+    nom_exercice: exerciseLabel,
+    repetitions: Math.max(0, Math.round(reps)),
+    muscles_travailles: muscles.join(", ")
+  };
+
+  if (durationColumnAvailable) {
+    row.duree_secondes =
+      durationSeconds === null || durationSeconds === undefined ? null : Math.max(0, Math.round(durationSeconds));
+  }
+
+  try {
+    await execute(supabase.from("historique").insert(row));
+  } catch (err) {
+    if (!isMissingDurationColumn(err)) throw err;
+
+    durationColumnAvailable = false;
+    delete row.duree_secondes;
+    console.warn(
+      "Colonne duree_secondes absente : seance enregistree sans duree. " +
+        "Executer supabase/migrations/0002_duree_seances.sql pour l'activer."
+    );
+    await execute(supabase.from("historique").insert(row));
+  }
 }
 
 // results : [{ exerciseLabel, muscles, reps, durationSeconds }] - une ligne par exercice
@@ -99,14 +126,30 @@ export async function fetchLeaderboard() {
 // [{ reps, exerciseLabel, durationSeconds, performedOn, createdAt }]
 export async function fetchUserSessions(username, limit = 10) {
   ensureConfigured();
-  const data = await execute(
-    supabase
-      .from("historique")
-      .select("repetitions, nom_exercice, duree_secondes, date, created_at")
-      .eq("pseudo", username)
-      .order("created_at", { ascending: false })
-      .limit(limit)
-  );
+
+  const query = (columns) =>
+    execute(
+      supabase
+        .from("historique")
+        .select(columns)
+        .eq("pseudo", username)
+        .order("created_at", { ascending: false })
+        .limit(limit)
+    );
+
+  let data;
+  try {
+    data = await query(
+      durationColumnAvailable
+        ? "repetitions, nom_exercice, duree_secondes, date, created_at"
+        : "repetitions, nom_exercice, date, created_at"
+    );
+  } catch (err) {
+    // Meme cas que pour l'ecriture : migration 0002 pas encore appliquee.
+    if (!isMissingDurationColumn(err)) throw err;
+    durationColumnAvailable = false;
+    data = await query("repetitions, nom_exercice, date, created_at");
+  }
 
   return (data || []).map((row) => ({
     reps: row.repetitions,

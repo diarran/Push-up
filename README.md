@@ -274,6 +274,13 @@ enregistree.
 - `npm run dev` : serveur de developpement
 - `npm run build` : build de production dans `dist/`
 - `npm run preview` : sert le build de production localement
+- `npm test` : tests du compteur de repetitions (`test/`, lanceur integre a
+  Node, aucune dependance)
+
+Les tests couvrent le coeur du comptage en lui injectant des angles : series
+propres, bruit de detection, immobilite au niveau d'un seuil, dos creuse,
+demi-pompes, cadences de 2 s a 0,5 s par repetition, et perte de suivi.
+C'est la ou se logeaient les bugs constates en conditions reelles.
 
 ## Tester sur iPhone
 
@@ -325,6 +332,14 @@ detection :
   avertissement, la repetition est comptee quand meme
 - les seuils des pompes sont assouplis (100/150 au lieu de 90/160) : de
   profil, les angles extremes sont rarement mesures par le modele
+
+Quand une descente n'est pas assez basse, la repetition n'est pas comptee
+mais l'ecran le dit ("Pas assez bas, non comptee") au lieu de rester
+muet. Le bouton "Debug" de l'ecran de seance affiche l'angle mesure,
+l'angle lisse, les seuils en vigueur et l'amplitude reellement atteinte a
+la derniere repetition validee : c'est ce qui permet de savoir si une
+repetition manquee vient du mouvement ou d'un seuil mal regle, et de
+regler `thresholds` dans `src/core/exercises/pushup.js` en consequence.
 
 Le lissage introduit un retard volontaire de une a deux frames (~60 ms a
 30 images/seconde). En simulation, le comptage reste exact de 2 s par
@@ -386,6 +401,14 @@ par C.J..Goldman (https://sketchfab.com/C.J..Goldman), sous licence
 CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/).
 
 ## Duree des seances
+
+Tant que la migration `0002` n'a pas ete appliquee, la colonne
+`duree_secondes` n'existe pas et la base refuse aussi bien l'ecriture que
+la lecture qui la mentionnent. Plutot que de perdre la seance,
+`src/db/historique.js` detecte ce cas precis (codes `42703` / `PGRST204`
+mentionnant la colonne) et rejoue la requete sans la duree, en le signalant
+dans la console. La duree est enregistree des que la migration est passee,
+sans changement de code.
 
 La duree passee sur chaque exercice est enregistree en base
 (`historique.duree_secondes`, migration `0002_duree_seances.sql`) ; la

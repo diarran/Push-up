@@ -18,6 +18,11 @@
 // rep_success) : chaque exercice traduit ces codes en messages adaptes
 // (voir pushup.js / squat.js / lunge.js).
 
+// Amplitude minimale, en degres sous le seuil haut, a partir de laquelle on
+// considere qu'il y a eu une tentative de repetition (et non un simple
+// tremblement de detection). Sert a signaler les descentes trop courtes.
+const ATTEMPT_MARGIN = 20;
+
 export function createAngleRepCounter({ downAngle, upAngle, smoothing = 0.45, confirmFrames = 2 }) {
   let stage = "up"; // "up" | "down"
   let count = 0;
@@ -25,12 +30,21 @@ export function createAngleRepCounter({ downAngle, upAngle, smoothing = 0.45, co
   let downStreak = 0;
   let upStreak = 0;
 
+  // Angle le plus bas atteint depuis le dernier passage en position haute :
+  // permet de dire a l'utilisateur jusqu'ou il est reellement descendu,
+  // plutot que de le laisser deviner pourquoi une repetition n'a pas
+  // compte.
+  let attemptMinAngle = Infinity;
+  let lastRepMinAngle = null;
+
   function reset() {
     stage = "up";
     count = 0;
     smoothedAngle = null;
     downStreak = 0;
     upStreak = 0;
+    attemptMinAngle = Infinity;
+    lastRepMinAngle = null;
   }
 
   // A appeler quand le suivi est perdu (corps hors cadre) : repart d'un
@@ -40,11 +54,13 @@ export function createAngleRepCounter({ downAngle, upAngle, smoothing = 0.45, co
     smoothedAngle = null;
     downStreak = 0;
     upStreak = 0;
+    attemptMinAngle = Infinity;
   }
 
   function evaluate({ primaryAngle, alignOk }) {
     smoothedAngle =
       smoothedAngle === null ? primaryAngle : smoothing * primaryAngle + (1 - smoothing) * smoothedAngle;
+    attemptMinAngle = Math.min(attemptMinAngle, smoothedAngle);
 
     let result;
 
@@ -61,8 +77,18 @@ export function createAngleRepCounter({ downAngle, upAngle, smoothing = 0.45, co
         }
       } else {
         downStreak = 0;
-        result =
-          smoothedAngle >= upAngle ? { code: "ready", type: "neutral" } : { code: "go_lower", type: "neutral" };
+        if (smoothedAngle >= upAngle) {
+          // Retour en position haute sans jamais avoir atteint le bas : si
+          // une vraie descente a eu lieu, c'est une repetition manquee de
+          // peu, et l'utilisateur doit savoir de combien.
+          const attempted = attemptMinAngle <= upAngle - ATTEMPT_MARGIN;
+          result = attempted
+            ? { code: "shallow_rep", type: "warning", attemptMinAngle }
+            : { code: "ready", type: "neutral" };
+          attemptMinAngle = smoothedAngle;
+        } else {
+          result = { code: "go_lower", type: "neutral" };
+        }
       }
     } else {
       downStreak = 0;
@@ -72,7 +98,9 @@ export function createAngleRepCounter({ downAngle, upAngle, smoothing = 0.45, co
           stage = "up";
           upStreak = 0;
           count++;
-          result = { code: "rep_success", type: "success", repCompleted: true };
+          lastRepMinAngle = attemptMinAngle;
+          attemptMinAngle = smoothedAngle;
+          result = { code: "rep_success", type: "success", repCompleted: true, lastRepMinAngle };
         } else {
           result = { code: "lock_out", type: "neutral" };
         }
@@ -97,6 +125,11 @@ export function createAngleRepCounter({ downAngle, upAngle, smoothing = 0.45, co
     evaluate,
     reset,
     noteTrackingLost,
+    // Angle de coude le plus ferme atteint lors de la derniere repetition
+    // validee : reference pour regler les seuils sur le terrain.
+    get lastRepMinAngle() {
+      return lastRepMinAngle;
+    },
     get count() {
       return count;
     },

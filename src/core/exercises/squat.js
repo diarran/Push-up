@@ -32,6 +32,7 @@ export const squatExercise = {
     hold_bottom: "Bas, remonte",
     lock_out: "Tends les jambes",
     form_broken: "Redresse le buste",
+    shallow_rep: "Pas assez bas, non comptee",
     rep_success: "Repetition validee"
   }
 };

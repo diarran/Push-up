@@ -149,6 +149,28 @@ export function renderSessionScreen(root, ctx) {
 
   debugToggle.addEventListener("click", () => debugBox.classList.toggle("visible"));
 
+  // Panneau de reglage : montre l'angle mesure face aux seuils qui decident
+  // du comptage, et jusqu'ou la derniere repetition est reellement
+  // descendue. C'est ce qui permet de dire si une repetition non comptee
+  // vient du mouvement ou d'un seuil mal regle.
+  function updateDebugBox(evalResult) {
+    if (!debugBox.classList.contains("visible")) return;
+
+    const exercise = engine.exerciseDef;
+    const config = exercise.thresholds || {};
+    const angle = evalResult.metrics ? evalResult.metrics.primaryAngle : null;
+    const lastRep = engine.lastRepMinAngle;
+
+    debugBox.innerHTML = [
+      `Cote : ${evalResult.side === "left" ? "gauche" : "droit"}`,
+      `Angle : ${angle === null ? "-" : angle.toFixed(0)} deg`,
+      `Lisse : ${evalResult.smoothedAngle === undefined ? "-" : evalResult.smoothedAngle.toFixed(0)} deg`,
+      `Seuils : ${config.downAngle ?? "?"} / ${config.upAngle ?? "?"}`,
+      `Derniere rep : ${lastRep === null || lastRep === undefined ? "-" : `${lastRep.toFixed(0)} deg`}`,
+      `Bassin : ${evalResult.formVisible ? (evalResult.metrics.alignOk ? "ok" : "creuse") : "hors cadre"}`
+    ].join("<br>");
+  }
+
   // Une seance libre (seance pompes : un seul bloc, aucun objectif)
   // n'affiche ni numero de serie ni objectif chiffre : il n'y a rien a
   // suivre a part le compteur.
@@ -349,6 +371,7 @@ export function renderSessionScreen(root, ctx) {
 
     setMessage(evalResult.message, evalResult.type);
     updateHud();
+    updateDebugBox(evalResult);
 
     if (evalResult.repCompleted) {
       flashScreen();

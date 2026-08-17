@@ -42,7 +42,9 @@ export function createExerciseEngine(exerciseDef) {
     const result = state.evaluate(metrics);
     const message = exerciseDef.messages[result.code] || result.code;
 
-    return { visible: true, ...result, message };
+    // metrics et side sont remontes pour l'affichage de debogage : c'est ce
+    // qui permet de regler les seuils sur le terrain (voir session.js).
+    return { visible: true, ...result, message, metrics, side, formVisible };
   }
 
   return {
@@ -54,6 +56,11 @@ export function createExerciseEngine(exerciseDef) {
     },
     get elapsedSeconds() {
       return state.elapsedSeconds ?? 0;
+    },
+    // Amplitude reelle de la derniere repetition validee (exercices en
+    // repetitions uniquement), pour l'affichage de debogage.
+    get lastRepMinAngle() {
+      return state.lastRepMinAngle ?? null;
     }
   };
 }
