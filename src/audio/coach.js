@@ -25,7 +25,10 @@ export function createVoiceCoach() {
   let voice = null;
   let queue = [];
   let speaking = false;
-  let enabled = supported;
+  // Coach vocal suspendu pour le moment : desactive par defaut, toutes les
+  // annonces deviennent des no-ops. Repasser a `supported` (et remettre le
+  // bouton son dans l'ecran de seance) pour le reactiver.
+  let enabled = false;
   const lastSpokenAt = new Map();
   let lastEncouragementAt = 0;
 

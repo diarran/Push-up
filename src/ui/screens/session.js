@@ -5,6 +5,7 @@ import { getExercise } from "../../core/exercises/index.js";
 import { submitWorkoutResults } from "../../db/historique.js";
 import { withTimeout } from "../../core/withTimeout.js";
 import { muscleLabel } from "../../biomechanics/muscleGroups.js";
+import { formatDuration } from "../../core/date.js";
 
 const SUBMIT_TIMEOUT_MS = 6000;
 const FLASH_DURATION_MS = 380;
@@ -31,11 +32,11 @@ export function renderSessionScreen(root, ctx) {
           <div class="exerciseLabel" id="exerciseLabel"></div>
           <div class="counter" id="counter">0</div>
           <div class="counterLabel" id="counterLabel">Repetitions</div>
+          <div class="timerText" id="timer">00:00</div>
         </div>
         <div class="topRight">
           <button id="endBtn" class="dangerPill">Terminer</button>
           <button id="cameraFlipBtn" class="ghostPill">Retourner camera</button>
-          <button id="soundToggle" class="ghostPill"></button>
           <button id="debugToggle" class="ghostPill">Debug</button>
           <div id="debugBox" class="debugBox"></div>
         </div>
@@ -44,6 +45,21 @@ export function renderSessionScreen(root, ctx) {
         <div id="messageBanner" class="messageBanner neutral">Chargement du modele</div>
         <div id="stagePill" class="stagePill"></div>
       </div>
+    </div>
+    <div id="recapOverlay" class="recapOverlay">
+      <h2>Seance terminee</h2>
+      <div class="recapStats">
+        <div class="recapTile">
+          <div class="recapValue" id="recapReps">0</div>
+          <div class="recapLabel">Repetitions</div>
+        </div>
+        <div class="recapTile">
+          <div class="recapValue" id="recapDuration">-</div>
+          <div class="recapLabel">Duree</div>
+        </div>
+      </div>
+      <p id="recapStatus" class="recapStatus"></p>
+      <button id="recapHomeBtn" class="primaryBtn">Retour a l'accueil</button>
     </div>
   `;
   root.appendChild(el);
@@ -61,7 +77,6 @@ export function renderSessionScreen(root, ctx) {
   const debugToggle = el.querySelector("#debugToggle");
   const endBtn = el.querySelector("#endBtn");
   const cameraFlipBtn = el.querySelector("#cameraFlipBtn");
-  const soundToggle = el.querySelector("#soundToggle");
 
   let landmarker = null;
   let drawingUtils = null;
@@ -77,6 +92,23 @@ export function renderSessionScreen(root, ctx) {
   let phase = "loading"; // "loading" | "working" | "finished"
   let engine = null;
   const resultsByExercise = new Map();
+  let sessionStartedAt = null;
+  let setStartedAt = null;
+  let timerIntervalId = null;
+
+  const timerEl = el.querySelector("#timer");
+  const recapOverlay = el.querySelector("#recapOverlay");
+  const recapStatus = el.querySelector("#recapStatus");
+
+  function sessionElapsedSeconds() {
+    return sessionStartedAt === null ? 0 : (Date.now() - sessionStartedAt) / 1000;
+  }
+
+  function formatTimer(totalSeconds) {
+    const m = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+    const s = String(Math.floor(totalSeconds % 60)).padStart(2, "0");
+    return `${m}:${s}`;
+  }
 
   function currentBlock() {
     return plan[blockIndex];
@@ -86,8 +118,16 @@ export function renderSessionScreen(root, ctx) {
     if (!engine) return;
     const block = currentBlock();
     const amount = block.mode === "hold" ? engine.elapsedSeconds : engine.count;
-    const entry = resultsByExercise.get(block.exerciseId) || { exerciseLabel: block.label, muscles: block.muscles, reps: 0 };
+    const entry =
+      resultsByExercise.get(block.exerciseId) ||
+      { exerciseLabel: block.label, muscles: block.muscles, reps: 0, durationSeconds: 0 };
     entry.reps += amount;
+    // Temps reellement passe sur cette serie (la somme des lignes en base
+    // redonne la duree totale de la seance).
+    if (setStartedAt !== null) {
+      entry.durationSeconds += (Date.now() - setStartedAt) / 1000;
+      setStartedAt = null;
+    }
     resultsByExercise.set(block.exerciseId, entry);
   }
 
@@ -107,16 +147,7 @@ export function renderSessionScreen(root, ctx) {
     );
   }
 
-  function updateSoundToggle() {
-    soundToggle.textContent = voiceCoach.enabled ? "Son : active" : "Son : coupe";
-  }
-  updateSoundToggle();
-
   debugToggle.addEventListener("click", () => debugBox.classList.toggle("visible"));
-  soundToggle.addEventListener("click", () => {
-    voiceCoach.setEnabled(!voiceCoach.enabled);
-    updateSoundToggle();
-  });
 
   function updateHud() {
     const block = currentBlock();
@@ -142,6 +173,7 @@ export function renderSessionScreen(root, ctx) {
     const block = currentBlock();
     engine = createExerciseEngine(getExercise(block.exerciseId));
     phase = "working";
+    setStartedAt = Date.now();
     try {
       voiceCoach.announceExerciseIntro(block.label, setIndex + 1, block.sets);
     } finally {
@@ -224,18 +256,32 @@ export function renderSessionScreen(root, ctx) {
     ended = true;
     phase = "finished";
     stopCamera();
+    if (timerIntervalId) clearInterval(timerIntervalId);
+    timerIntervalId = null;
 
     const exerciseCount = resultsByExercise.size;
     voiceCoach.announceWorkoutComplete(exerciseCount);
-    setMessage("Seance terminee", "success");
 
-    try {
-      await withTimeout(submitWorkoutResults(username, Array.from(resultsByExercise.values())), SUBMIT_TIMEOUT_MS);
-    } catch (err) {
-      console.error("Enregistrement de la seance impossible", err);
+    const results = Array.from(resultsByExercise.values());
+    const totalReps = results.reduce((sum, r) => sum + Math.round(r.reps), 0);
+    const durationSeconds = Math.round(sessionElapsedSeconds());
+
+    el.querySelector("#recapReps").textContent = totalReps;
+    el.querySelector("#recapDuration").textContent = formatDuration(durationSeconds);
+    recapOverlay.classList.add("visible");
+
+    if (totalReps > 0) {
+      recapStatus.textContent = "Enregistrement...";
+      try {
+        await withTimeout(submitWorkoutResults(username, results), SUBMIT_TIMEOUT_MS);
+        recapStatus.textContent = "Seance enregistree";
+      } catch (err) {
+        console.error("Enregistrement de la seance impossible", err);
+        recapStatus.textContent = "Enregistrement impossible (hors ligne ?)";
+      }
+    } else {
+      recapStatus.textContent = "Aucune repetition validee : rien n'a ete enregistre.";
     }
-
-    setTimeout(() => ctx.navigate("home"), 1600);
   }
 
   function abortWorkout() {
@@ -318,6 +364,10 @@ export function renderSessionScreen(root, ctx) {
       drawingUtils = new DrawingUtils(ctx2d);
 
       cameraActive = true;
+      sessionStartedAt = Date.now();
+      timerIntervalId = setInterval(() => {
+        timerEl.textContent = formatTimer(sessionElapsedSeconds());
+      }, 500);
       voiceCoach.announceSessionStart();
       startSet();
       renderLoop();
@@ -329,10 +379,13 @@ export function renderSessionScreen(root, ctx) {
 
   endBtn.addEventListener("click", abortWorkout);
   cameraFlipBtn.addEventListener("click", flipCamera);
+  el.querySelector("#recapHomeBtn").addEventListener("click", () => ctx.navigate("home"));
 
   start();
 
   return () => {
     stopCamera();
+    if (timerIntervalId) clearInterval(timerIntervalId);
+    timerIntervalId = null;
   };
 }

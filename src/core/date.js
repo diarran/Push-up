@@ -11,3 +11,13 @@ export function formatShortDate(dateStr) {
   const d = new Date(`${dateStr}T00:00:00`);
   return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
+
+// Duree lisible : "45 s", "4 min", "4 min 32 s".
+export function formatDuration(totalSeconds) {
+  if (totalSeconds === null || totalSeconds === undefined || Number.isNaN(totalSeconds)) return "-";
+  const seconds = Math.max(0, Math.round(totalSeconds));
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m === 0) return `${s} s`;
+  return s === 0 ? `${m} min` : `${m} min ${s} s`;
+}

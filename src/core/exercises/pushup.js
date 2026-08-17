@@ -20,7 +20,10 @@ export const pushupExercise = {
   // empecher de valider une repetition par ailleurs correcte.
   corePointKeys: ["shoulder", "elbow", "wrist"],
   formPointKeys: ["shoulder", "hip", "ankle"],
-  createState: () => createAngleRepCounter({ downAngle: 90, upAngle: 160 }),
+  // Seuils assouplis (100/150 au lieu de 90/160) : mesures de profil, les
+  // angles extremes sont rarement atteints par le modele, ce qui faisait
+  // perdre des repetitions pourtant completes.
+  createState: () => createAngleRepCounter({ downAngle: 100, upAngle: 150 }),
   computeMetrics(points, formVisible) {
     const primaryAngle = angleAt(points.shoulder, points.elbow, points.wrist);
     const alignAngle = formVisible ? angleAt(points.shoulder, points.hip, points.ankle) : null;

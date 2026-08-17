@@ -1,0 +1,11 @@
+Model Information:
+* title:	Male anatomy figure
+* source:	https://sketchfab.com/3d-models/male-anatomy-figure-e39449c8c59346788834b94706faf4bb
+* author:	C.J..Goldman (https://sketchfab.com/C.J..Goldman)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Male anatomy figure" (https://sketchfab.com/3d-models/male-anatomy-figure-e39449c8c59346788834b94706faf4bb) by C.J..Goldman (https://sketchfab.com/C.J..Goldman) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)

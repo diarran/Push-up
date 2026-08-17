@@ -48,7 +48,9 @@ export function renderGateScreen(root, ctx) {
     submitBtn.disabled = true;
     submitBtn.textContent = "Verification";
 
-    const username = el.querySelector("#usernameInput").value.trim();
+    // Espaces normalises (debut, fin, doubles espaces) pour eviter que
+    // "Toto " et "Toto" creent deux entrees distinctes au classement.
+    const username = el.querySelector("#usernameInput").value.replace(/\s+/g, " ").trim();
 
     try {
       if (PASSCODE_ENABLED) {

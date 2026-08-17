@@ -4,3 +4,6 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# Archives sources des modeles 3D (fichiers extraits versionnes dans public/models/)
+*.zip

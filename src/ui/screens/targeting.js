@@ -5,6 +5,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { buildBody, setMuscleHighlighted, updateHologramPulse, RIM_COLOR } from "../threeBody/buildBody.js";
+import { loadAnatomyModel } from "../threeBody/loadAnatomyModel.js";
 import { listMuscleGroups } from "../../biomechanics/muscleGroups.js";
 import { escapeHtml } from "../escapeHtml.js";
 
@@ -18,10 +19,13 @@ export function renderTargetingScreen(root, ctx) {
       <h1>Choisis tes zones</h1>
       <p class="subtitle">Fais pivoter le corps, zoome, touche un muscle pour le cibler.</p>
     </div>
-    <div id="threeContainer" class="threeContainer"></div>
+    <div id="threeContainer" class="threeContainer">
+      <p id="modelStatus" class="modelStatus">Chargement du corps 3D</p>
+    </div>
     <div class="targetingFooter">
       <div id="selectionList" class="selectionList"><span class="emptyState">Aucun muscle selectionne</span></div>
       <button id="continueBtn" class="primaryBtn" disabled>Continuer</button>
+      <p class="modelCredit">Corps 3D : "Male anatomy figure" par C.J..Goldman (CC-BY-4.0)</p>
     </div>
   `;
   root.appendChild(el);
@@ -59,10 +63,39 @@ export function renderTargetingScreen(root, ctx) {
   grid.material.opacity = 0.18;
   scene.add(grid);
 
+  // Volumes de detection des muscles : invisibles au repos, ils portent la
+  // surbrillance des muscles selectionnes par-dessus le corps.
   const { group, parts } = buildBody();
   scene.add(group);
 
   for (const muscleId of selected) setMuscleHighlighted(parts, muscleId, true);
+
+  // Corps visible : maillage anatomique reel, charge a la demande (~8,5 Mo)
+  // pour ne pas retarder l'affichage de l'ecran.
+  const statusEl = el.querySelector("#modelStatus");
+  let anatomy = null;
+  let disposed = false;
+
+  loadAnatomyModel()
+    .then((loaded) => {
+      // L'utilisateur a pu quitter l'ecran pendant le chargement : dans ce
+      // cas on libere immediatement, sans rien ajouter a une scene morte.
+      if (disposed) {
+        loaded.dispose();
+        return;
+      }
+      anatomy = loaded;
+      scene.add(anatomy.object);
+      statusEl.remove();
+    })
+    .catch((err) => {
+      console.error("Chargement du corps 3D impossible", err);
+      if (disposed) return;
+      // Repli : sans le maillage, on rend les volumes de detection visibles
+      // pour que le ciblage reste utilisable.
+      for (const mesh of parts) mesh.material.colorWrite = true;
+      statusEl.textContent = "Corps 3D indisponible, affichage simplifie";
+    });
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
@@ -155,8 +188,10 @@ export function renderTargetingScreen(root, ctx) {
   });
 
   return () => {
+    disposed = true;
     if (rafId) cancelAnimationFrame(rafId);
     resizeObserver.disconnect();
+    if (anatomy) anatomy.dispose();
     renderer.domElement.removeEventListener("pointerdown", onPointerDown);
     renderer.domElement.removeEventListener("pointerup", onPointerUp);
     controls.dispose();

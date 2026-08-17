@@ -496,6 +496,20 @@ button {
   flex: 1;
   min-height: 0;
   touch-action: none;
+  position: relative;
+}
+/* Etat de chargement du corps 3D, superpose au canvas */
+.modelStatus {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  margin: 0;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  pointer-events: none;
 }
 .threeContainer canvas {
   display: block;
@@ -514,6 +528,13 @@ button {
   flex-wrap: wrap;
   gap: 8px;
   min-height: 32px;
+}
+/* Attribution requise par la licence CC-BY du modele anatomique */
+.modelCredit {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.62rem;
+  text-align: center;
 }
 .musclePill {
   background: rgba(0, 230, 118, 0.12);
@@ -641,4 +662,93 @@ button {
   font-size: 10px;
   font-weight: 700;
   dominant-baseline: middle;
+}
+
+/* ---------- Chrono de seance ---------- */
+.timerText {
+  margin-top: 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Onglets du classement ---------- */
+.lbTabs {
+  display: flex;
+  gap: 8px;
+  padding: 14px 20px 0 20px;
+}
+.lbTab {
+  flex: 1;
+  background: var(--bg-tile);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.lbTab.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+/* ---------- Recap de fin de seance ---------- */
+.recapOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 24px;
+  background: rgba(10, 10, 10, 0.94);
+  backdrop-filter: blur(6px);
+  text-align: center;
+}
+.recapOverlay.visible {
+  display: flex;
+}
+.recapOverlay h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+.recapStats {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  max-width: 320px;
+}
+.recapTile {
+  flex: 1;
+  background: var(--bg-tile);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px 8px;
+}
+.recapValue {
+  color: var(--accent);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.recapLabel {
+  color: var(--text-muted);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 4px;
+}
+.recapStatus {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+  min-height: 1.2em;
+}
+.recapOverlay .primaryBtn {
+  max-width: 320px;
 }

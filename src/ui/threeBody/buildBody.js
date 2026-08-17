@@ -1,19 +1,33 @@
 import * as THREE from "three";
 import { createHologramMaterial, DEFAULT_RIM_COLOR } from "./hologramMaterial.js";
 
-// Corps stylise en primitives (capsules/boites), groupees et nommees par
-// muscle. Ce n'est pas un maillage anatomique reel (voir README) : c'est un
-// support d'interaction (rotation, zoom, clic, surbrillance) suffisant pour
-// le ciblage, en attendant un eventuel maillage segmente reel qui se
-// brancherait au meme endroit (le reste de l'ecran ne depend que de
-// mesh.userData.muscleId, pas de la forme des meshes).
+// Volumes de detection des muscles : des primitives simples (capsules,
+// boites) posees aux emplacements anatomiques, groupees et nommees par
+// muscle.
+//
+// Le corps *visible* est le maillage anatomique reel
+// (loadAnatomyModel.js). Ce maillage est monobloc (un seul materiau, aucun
+// decoupage par muscle) : il ne peut donc pas servir de cible de clic par
+// muscle. Ces primitives jouent ce role a sa place :
+// - invisibles au repos (colorWrite desactive) mais toujours cliquables,
+//   le raycast les vise directement (voir targeting.js)
+// - visibles et pulsantes une fois selectionnees : elles deviennent la
+//   surbrillance du muscle cible par-dessus le corps
+//
+// Le reste de l'ecran ne depend que de mesh.userData.muscleId : le jour ou
+// un maillage reellement segmente par muscle sera disponible, il pourra
+// remplacer ces primitives sans toucher a targeting.js.
 
 export const RIM_COLOR = DEFAULT_RIM_COLOR;
-const BASE_GLOW_INTENSITY = 0.4;
 const SELECTED_GLOW_INTENSITY = 1.8;
 
 function addPart(group, parts, muscleId, geometry, position) {
-  const mesh = new THREE.Mesh(geometry, createHologramMaterial());
+  const material = createHologramMaterial();
+  // Invisible au repos, mais toujours pris en compte par le raycast :
+  // colorWrite (et non `visible`) car un objet invisible ne serait plus
+  // cliquable.
+  material.colorWrite = false;
+  const mesh = new THREE.Mesh(geometry, material);
   mesh.userData.muscleId = muscleId;
   mesh.userData.selected = false;
   mesh.position.set(...position);
@@ -25,10 +39,6 @@ function addPart(group, parts, muscleId, geometry, position) {
 export function buildBody() {
   const group = new THREE.Group();
   const parts = [];
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.45, 24, 24), createHologramMaterial());
-  head.position.set(0, 3.6, 0);
-  group.add(head);
 
   addPart(group, parts, "pectoraux", new THREE.BoxGeometry(1.4, 1, 0.35), [0, 2.7, 0.35]);
   addPart(group, parts, "dos", new THREE.BoxGeometry(1.4, 1, 0.35), [0, 2.7, -0.35]);
@@ -61,7 +71,7 @@ export function setMuscleHighlighted(parts, muscleId, isSelected) {
   for (const mesh of parts) {
     if (mesh.userData.muscleId !== muscleId) continue;
     mesh.userData.selected = isSelected;
-    if (!isSelected) mesh.material.uniforms.glowIntensity.value = BASE_GLOW_INTENSITY;
+    mesh.material.colorWrite = isSelected;
   }
 }
 

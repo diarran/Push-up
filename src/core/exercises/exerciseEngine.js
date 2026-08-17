@@ -29,6 +29,9 @@ export function createExerciseEngine(exerciseDef) {
 
     const corePoints = exerciseDef.corePointKeys.map((key) => points[key]);
     if (!areVisible(corePoints, visThreshold)) {
+      // Suivi perdu : la machine a etats repart d'un lissage vierge pour ne
+      // pas melanger les angles d'avant et d'apres la perte.
+      state.noteTrackingLost?.();
       return { visible: false, message: "Recule-toi, corps entier visible", type: "neutral" };
     }
 

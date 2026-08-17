@@ -1,5 +1,5 @@
 import { fetchLeaderboard, fetchUserSessions, HistoriqueError } from "../../db/historique.js";
-import { formatShortDate } from "../../core/date.js";
+import { formatShortDate, formatDuration } from "../../core/date.js";
 import { escapeHtml } from "../escapeHtml.js";
 import { renderTopNav } from "../nav.js";
 
@@ -66,7 +66,9 @@ export function renderHomeScreen(root, ctx) {
           <div class="historyItem">
             <div>
               <div class="hDate">${formatShortDate(s.performedOn)}</div>
-              <div class="hMeta">${escapeHtml(s.exerciseLabel || "")}</div>
+              <div class="hMeta">${escapeHtml(s.exerciseLabel || "")}${
+                s.durationSeconds != null ? ` - ${formatDuration(s.durationSeconds)}` : ""
+              }</div>
             </div>
             <div class="hReps">${s.reps}</div>
           </div>`

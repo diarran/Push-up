@@ -24,17 +24,19 @@ export async function ensureUser(pseudo) {
 // seance. Pour un exercice "maintien" (planche), reps porte le nombre de
 // secondes tenues : la colonne repetitions n'a qu'une seule dimension
 // numerique disponible, on l'utilise dans ce sens pour cet exercice.
-async function submitExerciseResult({ username, exerciseLabel, muscles, reps }) {
+async function submitExerciseResult({ username, exerciseLabel, muscles, reps, durationSeconds }) {
   const { error } = await supabase.from("historique").insert({
     pseudo: username,
     nom_exercice: exerciseLabel,
     repetitions: Math.max(0, Math.round(reps)),
+    duree_secondes:
+      durationSeconds === null || durationSeconds === undefined ? null : Math.max(0, Math.round(durationSeconds)),
     muscles_travailles: muscles.join(", ")
   });
   if (error) throw new HistoriqueError(error.message);
 }
 
-// results : [{ exerciseLabel, muscles, reps }] - une ligne par exercice
+// results : [{ exerciseLabel, muscles, reps, durationSeconds }] - une ligne par exercice
 // effectue pendant la seance (les exercices a 0 repetition/seconde sont
 // ignores).
 export async function submitWorkoutResults(username, results) {
@@ -77,12 +79,13 @@ export async function fetchLeaderboard() {
   return Array.from(totals.values()).sort((a, b) => b.totalReps - a.totalReps);
 }
 
-// Historique recent d'un pseudo : [{ reps, exerciseLabel, performedOn, createdAt }]
+// Historique recent d'un pseudo :
+// [{ reps, exerciseLabel, durationSeconds, performedOn, createdAt }]
 export async function fetchUserSessions(username, limit = 10) {
   ensureConfigured();
   const { data, error } = await supabase
     .from("historique")
-    .select("repetitions, nom_exercice, date, created_at")
+    .select("repetitions, nom_exercice, duree_secondes, date, created_at")
     .eq("pseudo", username)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -91,6 +94,7 @@ export async function fetchUserSessions(username, limit = 10) {
   return (data || []).map((row) => ({
     reps: row.repetitions,
     exerciseLabel: row.nom_exercice,
+    durationSeconds: row.duree_secondes,
     performedOn: row.date,
     createdAt: row.created_at
   }));

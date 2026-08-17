@@ -29,12 +29,14 @@ durcissement du moteur de pose) est dans `docs/TDD-v4.md`.
 - **Vision par ordinateur** : `@mediapipe/tasks-vision` (`PoseLandmarker`),
   l'API MediaPipe actuellement maintenue par Google. Le moteur est
   multi-exercices : voir "Moteur multi-exercices" ci-dessous
-- **Ciblage 3D** : Three.js, corps stylise en primitives (pas un maillage
-  anatomique reel, voir "Limites connues")
+- **Ciblage 3D** : Three.js, maillage anatomique reel au rendu hologramme
+  (voir "Corps 3D")
 - **Generation de seance** : algorithme deterministe base sur des regles
   (pas de machine learning), voir "Generation de seance"
-- **Voix** : Web Speech API (`SpeechSynthesis`) native au navigateur, aucun
-  service tiers, fonctionne hors ligne
+- **Voix** : coach vocal **suspendu pour le moment** (desactive par defaut
+  dans `src/audio/coach.js`, priorite a la fiabilite du comptage). Le code
+  reste en place (Web Speech API, aucun service tiers) pour une
+  reactivation future
 - **Backend** : Supabase (Postgres), deux tables (`utilisateurs`,
   `historique`) en lecture/ecriture ouvertes. Pas de comptes individuels :
   un mot de passe de groupe unique, verifie uniquement cote client, filtre
@@ -59,14 +61,15 @@ src/
   auth/           gestion locale du pseudo + verification du mot de passe
   db/             acces direct aux tables Supabase (historique, classement)
   ui/
-    threeBody/    scene et corps 3D (Three.js) ; hologramMaterial.js est le
-                  shader hologramme partage entre le ciblage et les
-                  tutoriels
+    threeBody/    corps 3D (Three.js) : loadAnatomyModel.js charge le
+                  maillage anatomique, buildBody.js pose les volumes de
+                  detection par muscle, hologramMaterial.js est le shader
+                  hologramme partage entre le ciblage et les tutoriels
     charts/       graphiques SVG maison (courbe, barres), sans dependance
     screens/      gate, home, targeting, tutorial, workoutSetup, session,
                   progress, leaderboard
-supabase/migrations/0001_init.sql   schema complet (tables + policies)
-public/       manifest PWA, icones
+supabase/migrations/   0001_init.sql (schema) + 0002_duree_seances.sql
+public/       manifest PWA, icones, models/male_anatomy (corps 3D glTF)
 docs/TDD-v4.md   document de conception de la refonte v4
 ```
 
@@ -179,8 +182,8 @@ precedente de ce depot).
 ## Mise en place de Supabase
 
 1. Creer un projet gratuit sur supabase.com.
-2. Ouvrir l'editeur SQL du projet et executer l'integralite du fichier
-   `supabase/migrations/0001_init.sql`.
+2. Ouvrir l'editeur SQL du projet et executer, dans l'ordre, chaque fichier
+   de `supabase/migrations/` (`0001_init.sql` puis `0002_duree_seances.sql`).
 3. Dans Project Settings > API, recuperer l'URL du projet et la cle
    publique (`anon public key`).
 
@@ -240,7 +243,71 @@ d'ambiguite proche, le cote choisi la frame precedente est conserve
 plutot que recalcule independamment, pour eviter que l'angle mesure ne
 saute de maniere erratique.
 
-## Coach vocal
+La machine a etats des exercices en repetitions
+(`src/core/exercises/angleRepCounter.js`) est durcie contre le bruit de
+detection :
+
+- **lissage exponentiel** (EMA, `smoothing` 0.45) de l'angle principal :
+  une frame aberrante ne peut plus creer ni faire perdre une repetition
+- **anti-rebond** (`confirmFrames` 2) : un changement d'etat haut/bas doit
+  etre confirme sur plusieurs frames consecutives, ce qui supprime les
+  repetitions fantomes quand l'angle oscille autour d'un seuil
+- **controle de forme non bloquant** : "Gaine ton bassin" est un simple
+  avertissement, la repetition est comptee quand meme
+- les seuils des pompes sont assouplis (100/150 au lieu de 90/160) : de
+  profil, les angles extremes sont rarement mesures par le modele
+
+Le lissage introduit un retard volontaire de une a deux frames (~60 ms a
+30 images/seconde). En simulation, le comptage reste exact de 2 s par
+pompe jusqu'a 0,5 s par pompe ; il ne decroche qu'au-dela de 3 pompes par
+seconde, cadence hors de portee humaine. Augmenter `smoothing` (vers 1)
+reduit ce retard mais laisse repasser le bruit ; le baisser lisse
+davantage au prix de la reactivite.
+
+## Corps 3D
+
+L'ecran de ciblage affiche un maillage anatomique reel, place dans
+`public/models/male_anatomy/` (glTF + binaire, ~8,5 Mo) et charge a la
+demande par `src/ui/threeBody/loadAnatomyModel.js`. Le materiau d'origine
+est remplace par le shader hologramme partage
+(`hologramMaterial.js`), pour garder la meme identite visuelle que le
+reste des ecrans 3D. Le modele est mis a l'echelle automatiquement
+(mesure de sa boite englobante) : aucune valeur propre a ce fichier n'est
+codee en dur, un autre modele se substituerait sans retouche.
+
+Ce maillage etant monobloc (un seul materiau, aucun decoupage par
+muscle), il ne peut pas servir de cible de clic par muscle. Les
+primitives de `buildBody.js` restent donc en place dans ce role :
+invisibles au repos (`colorWrite` desactive, mais toujours cliquables),
+elles deviennent la surbrillance pulsante du muscle une fois selectionne.
+Si le chargement echoue, elles redeviennent visibles pour que le ciblage
+reste utilisable.
+
+Le fichier est trop volumineux pour le precache du service worker ; il
+est mis en cache a la premiere visite de l'ecran (`runtimeCaching`, voir
+`vite.config.js`).
+
+Credit requis par la licence, affiche dans l'application et repris ici :
+ce travail est base sur "Male anatomy figure"
+(https://sketchfab.com/3d-models/male-anatomy-figure-e39449c8c59346788834b94706faf4bb)
+par C.J..Goldman (https://sketchfab.com/C.J..Goldman), sous licence
+CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/).
+
+## Duree des seances
+
+La duree passee sur chaque exercice est enregistree en base
+(`historique.duree_secondes`, migration `0002_duree_seances.sql`) ; la
+somme des lignes d'une seance redonne la duree totale. Un chrono est
+affiche pendant la seance, et un ecran recapitulatif (repetitions totales,
+duree, statut d'enregistrement) s'affiche a la fin avant le retour a
+l'accueil.
+
+## Coach vocal (suspendu)
+
+Suspendu pour le moment : `enabled` est a `false` par defaut dans
+`src/audio/coach.js` et le bouton "Son" a ete retire de l'ecran de seance.
+Pour le reactiver, repasser le defaut a `supported` et remettre le bouton.
+Le fonctionnement decrit ci-dessous reste valable une fois reactive.
 
 `src/audio/coach.js` gere une file d'attente courte (3 messages maximum),
 un anti-spam par cooldown independant pour chaque type d'alerte (5
@@ -274,13 +341,14 @@ le seul levier logiciel restant pour un cadrage plus large.
 - **Mot de passe de groupe desactive temporairement** : l'ecran d'acces ne
   demande plus que le pseudo (`PASSCODE_ENABLED = false` dans
   `src/ui/screens/gate.js`). A remettre a `true` pour retablir le filtre.
-- **Corps 3D stylise, pas anatomique** : le ciblage utilise des primitives
-  (capsules/boites) groupees par muscle, pas un maillage anatomique
-  segmente (ceux-ci sont generalement des assets proprietaires). Un vrai
-  maillage glTF segmente par muscle se brancherait au meme endroit
-  (`src/ui/threeBody/buildBody.js`) sans changer le reste de
-  l'architecture, qui ne depend que du nom de muscle attache a chaque
-  partie (`mesh.userData.muscleId`).
+- **Corps 3D anatomique mais monobloc** : le maillage affiche est un vrai
+  modele anatomique (voir "Corps 3D"), mais il n'est pas decoupe par
+  muscle. La selection passe donc par des volumes de detection approches
+  (capsules/boites de `buildBody.js`) poses par-dessus : les zones
+  cliquables ne suivent pas exactement les contours des muscles du
+  maillage. Un maillage reellement segmente par muscle se brancherait au
+  meme endroit sans changer le reste de l'architecture, qui ne depend que
+  de `mesh.userData.muscleId`.
 - **Fentes simplifiees** : suivent l'angle du genou avant comme un squat,
   sans distinguer jambe avant/arriere ni largeur de fente.
 - **Tutoriel 3D anime uniquement pour les pompes** : `animationClips.js` ne
