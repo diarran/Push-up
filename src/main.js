@@ -54,11 +54,11 @@ function navigate(screen) {
   cleanupCurrent = null;
   root.innerHTML = "";
 
-  function mount(renderFn) {
+  function mount(renderFn, options) {
     // Une navigation plus recente a eu lieu pendant le chargement : on
     // abandonne ce montage pour ne pas ecraser l'ecran deja affiche.
     if (token !== navToken) return;
-    cleanupCurrent = renderFn(root, ctx);
+    cleanupCurrent = renderFn(root, ctx, options);
   }
 
   switch (screen) {
@@ -67,6 +67,13 @@ function navigate(screen) {
       // pour garder les autres ecrans legers.
       root.innerHTML = '<div class="screen loadingScreen"><p class="emptyState">Chargement</p></div>';
       import("./ui/screens/targeting.js").then((m) => mount(m.renderTargetingScreen));
+      break;
+    case "bodyViewer":
+      // Meme ecran que le ciblage, en simple visionneuse : le parcours etant
+      // reduit aux pompes, la selection de muscles ne mene nulle part pour
+      // l'instant (voir README, "Parcours reduit aux pompes").
+      root.innerHTML = '<div class="screen loadingScreen"><p class="emptyState">Chargement</p></div>';
+      import("./ui/screens/targeting.js").then((m) => mount(m.renderTargetingScreen, { viewerOnly: true }));
       break;
     case "tutorial":
       // Meme raison qu'au-dessus : Three.js charge a la demande.

@@ -8,6 +8,7 @@ import { buildRig } from "../../core/rig/buildRig.js";
 import { applyClip } from "../../core/rig/animateRig.js";
 import { ANIMATION_CLIPS } from "../../core/rig/animationClips.js";
 import { RIM_COLOR } from "../threeBody/buildBody.js";
+import { loadPushupAnimation } from "../threeBody/loadPushupAnimation.js";
 import { escapeHtml } from "../escapeHtml.js";
 
 const SCENE_BG = 0x05100c;
@@ -32,7 +33,9 @@ export function renderTutorialScreen(root, ctx) {
       <h1>${escapeHtml(firstBlock.label)}</h1>
       <p class="subtitle">Fais pivoter pour observer la posture sous tous les angles.</p>
     </div>
-    <div id="threeContainer" class="threeContainer"></div>
+    <div id="threeContainer" class="threeContainer">
+      <p id="modelStatus" class="modelStatus">Chargement de la demonstration</p>
+    </div>
     <div class="targetingFooter">
       <button id="continueBtn" class="primaryBtn">J'ai compris, commencer</button>
     </div>
@@ -68,14 +71,66 @@ export function renderTutorialScreen(root, ctx) {
   grid.material.opacity = 0.18;
   scene.add(grid);
 
+  // Demonstration de repli : le pantin en primitives, affiche immediatement
+  // pendant que le personnage anime (~35 Mo) se charge, et conserve si ce
+  // chargement echoue.
   const rig = buildRig();
   scene.add(rig.root);
+
+  const statusEl = el.querySelector("#modelStatus");
+  let character = null;
+  let disposed = false;
+  let userAdjusted = false;
+
+  loadPushupAnimation()
+    .then((loaded) => {
+      // L'utilisateur a pu quitter l'ecran pendant le chargement : on libere
+      // sans rien ajouter a une scene morte.
+      if (disposed) {
+        loaded.dispose();
+        return;
+      }
+      character = loaded;
+      scene.remove(rig.root);
+      scene.add(character.object);
+      frameSubject();
+      statusEl.remove();
+    })
+    .catch((err) => {
+      console.error("Chargement de la demonstration animee impossible", err);
+      if (disposed) return;
+      statusEl.textContent = "Demonstration simplifiee (modele indisponible)";
+    });
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.9, 0.4, 0.55);
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
+
+  // Direction de prise de vue : de trois quarts et legerement en hauteur,
+  // l'angle sous lequel on juge le mieux l'alignement du dos.
+  const VIEW_DIRECTION = new THREE.Vector3(0.55, 0.42, 1).normalize();
+
+  // Pendant une pompe le corps est allonge : sur un ecran de telephone en
+  // portrait, une distance fixe le couperait aux extremites. On calcule
+  // donc le recul necessaire pour que le sujet tienne dans les deux
+  // dimensions de l'ecran.
+  function frameSubject() {
+    // Une fois que l'utilisateur a pivote ou zoome, on ne touche plus a la
+    // camera : sur mobile, la barre d'adresse qui se masque declenche un
+    // redimensionnement, qui annulerait son geste en cours.
+    if (!character || userAdjusted) return;
+    const halfFov = THREE.MathUtils.degToRad(camera.fov) / 2;
+    const distanceForHeight = character.radius / Math.tan(halfFov);
+    const distanceForWidth = distanceForHeight / Math.max(camera.aspect, 0.01);
+    const distance = Math.max(distanceForHeight, distanceForWidth) * 1.15;
+
+    controls.maxDistance = Math.max(18, distance * 1.6);
+    controls.target.copy(character.center);
+    camera.position.copy(character.center).addScaledVector(VIEW_DIRECTION, distance);
+    controls.update();
+  }
 
   function resize() {
     const { clientWidth, clientHeight } = container;
@@ -84,21 +139,32 @@ export function renderTutorialScreen(root, ctx) {
     composer.setSize(clientWidth, clientHeight);
     camera.aspect = clientWidth / clientHeight;
     camera.updateProjectionMatrix();
+    frameSubject();
   }
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(container);
 
   // Un geste de l'utilisateur (glisser pour pivoter) suspend la rotation
-  // automatique, pour ne pas lutter contre OrbitControls.
+  // automatique et le cadrage automatique, pour ne pas lutter contre
+  // OrbitControls.
   controls.addEventListener("start", () => {
     controls.autoRotate = false;
+    userAdjusted = true;
   });
 
   let rafId = null;
   const clock = new THREE.Clock();
+  let elapsed = 0;
   function animate() {
-    const elapsed = clock.getElapsedTime();
-    applyClip(rig, clip, elapsed);
+    const delta = clock.getDelta();
+    elapsed += delta;
+    // Le personnage anime est pilote par son AnimationMixer ; le pantin de
+    // repli, par sa propre fonction d'animation.
+    if (character) {
+      character.mixer.update(delta);
+    } else {
+      applyClip(rig, clip, elapsed);
+    }
     controls.update();
     composer.render();
     rafId = requestAnimationFrame(animate);
@@ -109,7 +175,9 @@ export function renderTutorialScreen(root, ctx) {
   continueBtn.addEventListener("click", () => ctx.navigate("session"));
 
   return () => {
+    disposed = true;
     if (rafId) cancelAnimationFrame(rafId);
+    if (character) character.dispose();
     resizeObserver.disconnect();
     controls.dispose();
     bloomPass.dispose();

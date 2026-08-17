@@ -1,5 +1,6 @@
 import { fetchLeaderboard, fetchUserSessions, describeHistoriqueError } from "../../db/historique.js";
 import { formatShortDate, formatDuration } from "../../core/date.js";
+import { createPushupSessionPlan } from "../../workout/pushupSession.js";
 import { escapeHtml } from "../escapeHtml.js";
 import { renderTopNav } from "../nav.js";
 
@@ -26,22 +27,27 @@ export function renderHomeScreen(root, ctx) {
       <div class="statTile"><div class="statValue" id="statTotal">-</div><div class="statLabel">Total</div></div>
       <div class="statTile"><div class="statValue" id="statSessions">-</div><div class="statLabel">Seances</div></div>
     </div>
-    <button id="startBtn" class="primaryBtn">Demarrer la seance</button>
-    <p class="tip">Place le telephone contre un appui stable, recule-toi pour etre visible de profil, buste et jambes dans le cadre.</p>
+    <button id="startBtn" class="primaryBtn">Demarrer les pompes</button>
+    <p class="tip">Place le telephone contre un appui stable et mets-toi de profil : epaule, coude et poignet doivent rester dans le cadre. Compte autant de pompes que tu veux, la seance s'arrete avec le bouton Terminer.</p>
     <div class="historySection">
       <h2>Historique</h2>
       <div id="historyList"><p class="emptyState">Chargement</p></div>
     </div>
+    <button id="bodyBtn" class="linkBtn">Voir le corps 3D</button>
     <button id="logoutBtn" class="linkBtn">Changer de pseudo ou de code</button>
   `
   );
 
   root.appendChild(el);
 
+  // Parcours reduit aux pompes : on saute le ciblage 3D et le generateur de
+  // seance (toujours en place, voir README) pour aller droit a la
+  // demonstration puis a la camera.
   el.querySelector("#startBtn").addEventListener("click", () => {
-    ctx.setMuscleSelection([]);
-    ctx.navigate("targeting");
+    ctx.setWorkoutPlan(createPushupSessionPlan());
+    ctx.navigate("tutorial");
   });
+  el.querySelector("#bodyBtn").addEventListener("click", () => ctx.navigate("bodyViewer"));
   el.querySelector("#logoutBtn").addEventListener("click", () => ctx.logout());
 
   async function load() {

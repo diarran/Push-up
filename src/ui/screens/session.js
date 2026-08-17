@@ -149,22 +149,33 @@ export function renderSessionScreen(root, ctx) {
 
   debugToggle.addEventListener("click", () => debugBox.classList.toggle("visible"));
 
+  // Une seance libre (seance pompes : un seul bloc, aucun objectif)
+  // n'affiche ni numero de serie ni objectif chiffre : il n'y a rien a
+  // suivre a part le compteur.
+  function isOpenEnded(block) {
+    return block.mode === "hold" ? block.targetHoldSeconds == null : block.targetReps == null;
+  }
+
   function updateHud() {
     const block = currentBlock();
-    exerciseLabelEl.textContent = `${block.label} - serie ${setIndex + 1}/${block.sets}`;
+    const openEnded = isOpenEnded(block);
+    exerciseLabelEl.textContent =
+      openEnded && block.sets === 1 ? block.label : `${block.label} - serie ${setIndex + 1}/${block.sets}`;
 
     if (block.mode === "hold") {
       counterEl.textContent = engine ? engine.elapsedSeconds : 0;
-      counterLabelEl.textContent = `Secondes / ${block.targetHoldSeconds}`;
+      counterLabelEl.textContent = openEnded ? "Secondes" : `Secondes / ${block.targetHoldSeconds}`;
     } else {
       counterEl.textContent = engine ? engine.count : 0;
-      counterLabelEl.textContent = `Repetitions / ${block.targetReps}`;
+      counterLabelEl.textContent = openEnded ? "Repetitions" : `Repetitions / ${block.targetReps}`;
     }
     stagePill.textContent = `Muscles : ${block.muscles.map(muscleLabel).join(", ")}`;
   }
 
   function targetReached(block) {
     if (!engine) return false;
+    // Sans objectif, la seance ne s'arrete que sur "Terminer".
+    if (isOpenEnded(block)) return false;
     if (block.mode === "hold") return engine.elapsedSeconds >= block.targetHoldSeconds;
     return engine.count >= block.targetReps;
   }

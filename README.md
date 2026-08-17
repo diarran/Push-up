@@ -1,22 +1,49 @@
 # BSE push up
 
-Coach de musculation au poids de corps par vision par ordinateur
-(MediaPipe), avec ciblage musculaire 3D, generation de seance, coach
-vocal, suivi de progression avec graphiques et classement de groupe.
-Concu pour un petit groupe ferme (une dizaine de personnes), pas pour un
-usage grand public.
+Compteur de pompes par vision par ordinateur (MediaPipe), avec suivi de
+progression, graphiques et classement de groupe. Concu pour un petit
+groupe ferme (une dizaine de personnes), pas pour un usage grand public.
+
+L'application est volontairement limitee aux pompes pour l'instant (voir
+"Parcours reduit aux pompes") ; le moteur multi-exercices, le ciblage
+musculaire 3D et le generateur de seance sont deja en place pour la
+suite.
 
 ## Parcours utilisateur
 
 `gate` (pseudo ; mot de passe de groupe desactive temporairement, voir
 `PASSCODE_ENABLED` dans `src/ui/screens/gate.js`) -> `home` (stats,
-historique) -> `targeting` (ciblage 3D des muscles a travailler) ->
-`workoutSetup` (analyse biomecanique, temps disponible, plan genere) ->
-`tutorial` (demonstration 3D animee du premier exercice du plan, si une
-animation existe pour cet exercice ; sinon on passe directement a la
-seance, voir "Tutoriels animes") -> `session` (exercices et series
-enchaines directement, sans pause, flash plein ecran a chaque repetition
-validee, coach vocal, bascule camera avant/arriere) -> retour a `home`.
+historique) -> `tutorial` (demonstration 3D animee des pompes) ->
+`session` (comptage a la camera, flash plein ecran a chaque repetition
+validee, chrono, bascule camera avant/arriere) -> recapitulatif de fin de
+seance -> retour a `home`.
+
+## Parcours reduit aux pompes
+
+L'application ne propose volontairement que les pompes pour l'instant :
+tant que la fiabilite du comptage n'est pas validee en conditions
+reelles, ajouter des exercices reviendrait a multiplier les sources
+d'erreur. La seance est libre (une seule serie, aucun objectif chiffre,
+arret par le bouton "Terminer") : c'est le comptage qu'on observe, pas
+l'atteinte d'un objectif.
+
+Tout le reste est conserve et simplement hors du parcours par defaut :
+
+- les autres exercices (`squat.js`, `lunge.js`, `plank.js`) et le
+  generateur de seance (`src/workout/generator.js`) sont intacts
+- l'ecran de ciblage 3D reste accessible depuis l'accueil ("Voir le corps
+  3D") en mode visionneuse : on peut faire pivoter le corps et allumer
+  des muscles, mais la selection ne genere pas de seance
+- pour revenir au parcours complet : dans `src/ui/screens/home.js`,
+  faire pointer le bouton principal sur `targeting` (avec
+  `ctx.setMuscleSelection([])`) au lieu de `createPushupSessionPlan()` +
+  `tutorial`
+
+Le plan d'une seance de pompes est decrit dans
+`src/workout/pushupSession.js`. Un bloc dont `targetReps` (ou
+`targetHoldSeconds`) vaut `null` est une seance libre : `session.js`
+n'affiche alors ni numero de serie ni objectif, et ne s'arrete jamais
+tout seul.
 
 Le document de conception de la refonte v4 (tutoriels 3D, dashboard avance
 avec carte de fatigue musculaire, generateur a progression continue,
@@ -69,7 +96,7 @@ src/
     screens/      gate, home, targeting, tutorial, workoutSetup, session,
                   progress, leaderboard
 supabase/migrations/   0001_init.sql (schema) + 0002_duree_seances.sql
-public/       manifest PWA, icones, models/male_anatomy (corps 3D glTF)
+public/       manifest PWA, icones, models/ (corps 3D glTF + animation FBX)
 docs/TDD-v4.md   document de conception de la refonte v4
 ```
 
@@ -120,21 +147,39 @@ desequilibre et suggere de l'ajouter.
 ## Tutoriels animes
 
 Avant la camera, `src/ui/screens/tutorial.js` affiche une demonstration 3D
-du premier exercice du plan genere, avec la meme identite visuelle que le
-ciblage (hologramme, bloom, rotation libre a la souris/au doigt). Le corps
-anime (`src/core/rig/buildRig.js`) reprend les proportions de
-`buildBody.js` mais avec les bras en vraie hierarchie de pivots
-(epaule -> coude) pour pouvoir etre animes ; le reste du corps reste
-statique. Une animation est une simple liste de reperes temporels avec un
-angle par pivot (`src/core/rig/animationClips.js`), lue en boucle par
-interpolation lineaire (`src/core/rig/animateRig.js`).
+du mouvement, avec la meme identite visuelle que le ciblage (hologramme,
+bloom, rotation libre a la souris/au doigt).
 
-Ce n'est pas de la capture de mouvement ni un rig biomecanique complet :
-une approximation stylisee suffisante pour montrer le sens du geste sous
-tous les angles. Seules les pompes ont une animation pour l'instant ; les
-autres exercices utilisent le meme format et peuvent etre ajoutes sans
-changer le lecteur. Si le premier exercice du plan n'a pas d'animation,
-l'ecran est saute automatiquement et la seance demarre directement.
+La demonstration des pompes est une vraie capture de mouvement :
+`public/models/pushup_animation/pushup.fbx` (personnage Mixamo, squelette
+de 65 os, ~35 Mo), chargee a la demande par
+`src/ui/threeBody/loadPushupAnimation.js` avec le `FBXLoader` de Three.js
+et jouee par un `AnimationMixer`. Ses materiaux d'origine (et leurs
+textures embarquees, qui representent l'essentiel du poids du fichier)
+sont remplaces par le shader hologramme et liberes.
+
+Deux details du format Mixamo sont traites explicitement :
+
+- l'export contient un clip technique vide (`Take 001`) en plus du
+  mouvement (`mixamo.com`) : le lecteur retient le premier clip qui
+  contient reellement des pistes, sinon le personnage resterait fige
+- le fichier est fourni en T-pose debout alors que l'animation se deroule
+  au sol : la mise a l'echelle se fait sur la plus grande dimension (et
+  non sur la hauteur), et le cadrage vise un sujet allonge pres du sol,
+  avec un recul calcule d'apres la forme de l'ecran pour qu'un telephone
+  en portrait ne coupe pas les extremites du corps
+
+Le rendu d'un maillage anime par squelette impose que le shader hologramme
+applique lui-meme la deformation par les os : `hologramMaterial.js`
+inclut donc les blocs `skinning` de Three.js, sans effet sur les maillages
+statiques (ils sont encadres par `#ifdef USE_SKINNING`).
+
+Le pantin en primitives (`src/core/rig/`, anime par
+`animationClips.js` / `animateRig.js`) reste en place comme repli : il
+s'affiche immediatement pendant le telechargement du personnage, et
+persiste si celui-ci echoue. Les autres exercices n'ont pas encore de
+demonstration ; si un exercice n'en a aucune, l'ecran est saute
+automatiquement et la seance demarre directement.
 
 ## Progression
 

@@ -11,20 +11,26 @@ import { escapeHtml } from "../escapeHtml.js";
 
 const SCENE_BG = 0x05100c;
 
-export function renderTargetingScreen(root, ctx) {
+// options.viewerOnly : affiche le corps sans enchainer sur la generation de
+// seance (le parcours par defaut est reduit aux pompes).
+export function renderTargetingScreen(root, ctx, options = {}) {
+  const viewerOnly = Boolean(options.viewerOnly);
+
   const el = document.createElement("div");
   el.className = "screen targetingScreen";
   el.innerHTML = `
     <div class="targetingHeader">
-      <h1>Choisis tes zones</h1>
-      <p class="subtitle">Fais pivoter le corps, zoome, touche un muscle pour le cibler.</p>
+      <h1>${viewerOnly ? "Corps 3D" : "Choisis tes zones"}</h1>
+      <p class="subtitle">Fais pivoter le corps, zoome, touche un muscle pour l'allumer.</p>
     </div>
     <div id="threeContainer" class="threeContainer">
       <p id="modelStatus" class="modelStatus">Chargement du corps 3D</p>
     </div>
     <div class="targetingFooter">
       <div id="selectionList" class="selectionList"><span class="emptyState">Aucun muscle selectionne</span></div>
-      <button id="continueBtn" class="primaryBtn" disabled>Continuer</button>
+      <button id="continueBtn" class="primaryBtn"${viewerOnly ? "" : " disabled"}>${
+        viewerOnly ? "Retour" : "Continuer"
+      }</button>
       <p class="modelCredit">Corps 3D : "Male anatomy figure" par C.J..Goldman (CC-BY-4.0)</p>
     </div>
   `;
@@ -118,7 +124,8 @@ export function renderTargetingScreen(root, ctx) {
   function renderSelectionList() {
     if (selected.size === 0) {
       selectionListEl.innerHTML = '<span class="emptyState">Aucun muscle selectionne</span>';
-      continueBtn.disabled = true;
+      // En visionneuse, le bouton ne sert qu'a revenir : il reste actif.
+      continueBtn.disabled = !viewerOnly;
       return;
     }
     selectionListEl.innerHTML = Array.from(selected)
@@ -183,6 +190,10 @@ export function renderTargetingScreen(root, ctx) {
   animate();
 
   continueBtn.addEventListener("click", () => {
+    if (viewerOnly) {
+      ctx.navigate("home");
+      return;
+    }
     ctx.setMuscleSelection(Array.from(selected));
     ctx.navigate("workoutSetup");
   });

@@ -12,12 +12,29 @@ export const DEFAULT_BASE_COLOR = new THREE.Color(0x030a08);
 export const DEFAULT_RIM_COLOR = new THREE.Color(0x00e676);
 export const DEFAULT_GLOW_INTENSITY = 0.4;
 
+// Les blocs #include proviennent de la bibliotheque de shaders de Three.js.
+// Ceux lies au squelette (skin*) sont encadres par `#ifdef USE_SKINNING`
+// dans Three.js : ils ne produisent aucun code pour un maillage statique,
+// et appliquent la deformation par les os des qu'ils sont utilises sur un
+// SkinnedMesh (personnage anime du tutoriel). Le renderer definit
+// USE_SKINNING et alimente les uniformes du squelette automatiquement, y
+// compris pour un ShaderMaterial. Sans ces blocs, le personnage resterait
+// fige dans sa pose de repos.
 const VERTEX_SHADER = `
+  #include <common>
+  #include <skinning_pars_vertex>
   varying vec3 vNormal;
   varying vec3 vViewPosition;
   void main() {
-    vNormal = normalize(normalMatrix * normal);
-    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    #include <beginnormal_vertex>
+    #include <skinbase_vertex>
+    #include <skinnormal_vertex>
+    #include <defaultnormal_vertex>
+    vNormal = normalize(transformedNormal);
+
+    #include <begin_vertex>
+    #include <skinning_vertex>
+    vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
     vViewPosition = -mvPosition.xyz;
     gl_Position = projectionMatrix * mvPosition;
   }
