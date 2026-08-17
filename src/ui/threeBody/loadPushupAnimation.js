@@ -1,17 +1,18 @@
 import * as THREE from "three";
-import { FBXLoader } from "three/examples/jsm/loaders/FBXLoader.js";
-import { createHologramMaterial } from "./hologramMaterial.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { createSkinnedHologramMaterial } from "./hologramMaterial.js";
 
-// Charge le personnage anime des pompes (FBX Mixamo,
-// public/models/pushup_animation/) et lui applique le materiau hologramme
-// de l'application. Sert de demonstration du mouvement dans l'ecran de
-// tutoriel, a la place du pantin approximatif de core/rig/.
+// Charge le personnage anime des pompes et lui applique le materiau
+// hologramme de l'application. Sert de demonstration du mouvement dans
+// l'ecran de tutoriel, a la place du pantin approximatif de core/rig/.
 //
-// Le fichier est volumineux (~35 Mo) : il est charge a la demande, depuis
-// public/ (jamais bundle par Vite), et l'ecran affiche une demonstration
-// de repli tant qu'il n'est pas pret.
+// Le fichier est un glTF binaire produit a partir de l'export Mixamo
+// d'origine par `scripts/fbx-to-glb.mjs` : sans les textures du
+// personnage, inutiles ici, il pese 4,7 Mo au lieu de 33 Mo. Il est charge
+// a la demande, depuis public/ (jamais bundle par Vite), et l'ecran
+// affiche une demonstration de repli tant qu'il n'est pas pret.
 
-const MODEL_URL = `${import.meta.env.BASE_URL}models/pushup_animation/pushup.fbx`;
+const MODEL_URL = `${import.meta.env.BASE_URL}models/pushup_animation/pushup.glb`;
 
 // Le personnage est a l'horizontale pendant une pompe : on ne peut pas
 // caler sa taille sur sa hauteur (elle serait minuscule), on cale donc sa
@@ -44,7 +45,7 @@ function replaceMaterials(object) {
       if (material) originals.add(material);
     }
 
-    const material = createHologramMaterial();
+    const material = createSkinnedHologramMaterial();
     child.material = material;
     created.push(material);
 
@@ -92,14 +93,21 @@ function fitToScene(object) {
   object.position.y += GROUND_Y - scaledBox.min.y;
 }
 
-export async function loadPushupAnimation() {
-  const object = await new FBXLoader().loadAsync(MODEL_URL);
+// onProgress : (pourcentage|null) - null quand la taille totale est
+// inconnue. Le fichier est lourd : sans retour visible, un telechargement
+// long est indiscernable d'un plantage.
+export async function loadPushupAnimation(onProgress) {
+  const gltf = await new GLTFLoader().loadAsync(MODEL_URL, (event) => {
+    if (typeof onProgress !== "function") return;
+    onProgress(event.lengthComputable && event.total > 0 ? (event.loaded / event.total) * 100 : null);
+  });
 
+  const object = gltf.scene;
   const materials = replaceMaterials(object);
   fitToScene(object);
 
   const mixer = new THREE.AnimationMixer(object);
-  const clip = pickAnimationClip(object.animations);
+  const clip = pickAnimationClip(gltf.animations);
   if (clip) mixer.clipAction(clip).play();
 
   function dispose() {

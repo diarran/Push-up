@@ -82,7 +82,13 @@ export function renderTutorialScreen(root, ctx) {
   let disposed = false;
   let userAdjusted = false;
 
-  loadPushupAnimation()
+  loadPushupAnimation((percent) => {
+    if (disposed) return;
+    statusEl.textContent =
+      percent === null
+        ? "Telechargement de la demonstration animee..."
+        : `Telechargement de la demonstration animee : ${Math.round(percent)} %`;
+  })
     .then((loaded) => {
       // L'utilisateur a pu quitter l'ecran pendant le chargement : on libere
       // sans rien ajouter a une scene morte.
@@ -94,12 +100,23 @@ export function renderTutorialScreen(root, ctx) {
       scene.remove(rig.root);
       scene.add(character.object);
       frameSubject();
-      statusEl.remove();
+
+      if (character.hasAnimation) {
+        statusEl.remove();
+      } else {
+        // Le personnage est la mais aucun clip exploitable n'a ete trouve :
+        // il resterait immobile sans qu'on sache pourquoi.
+        statusEl.textContent = "Personnage charge, mais aucune animation trouvee dans le fichier";
+      }
     })
     .catch((err) => {
       console.error("Chargement de la demonstration animee impossible", err);
       if (disposed) return;
-      statusEl.textContent = "Demonstration simplifiee (modele indisponible)";
+      // Message d'erreur affiche tel quel : sans lui, un echec de
+      // chargement est indiscernable d'une animation qui ne joue pas, et il
+      // faut ouvrir la console du navigateur pour le savoir.
+      const detail = err && err.message ? String(err.message).slice(0, 120) : "cause inconnue";
+      statusEl.textContent = `Demonstration simplifiee - echec du chargement : ${detail}`;
     });
 
   const composer = new EffectComposer(renderer);

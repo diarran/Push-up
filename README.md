@@ -151,33 +151,57 @@ du mouvement, avec la meme identite visuelle que le ciblage (hologramme,
 bloom, rotation libre a la souris/au doigt).
 
 La demonstration des pompes est une vraie capture de mouvement :
-`public/models/pushup_animation/pushup.fbx` (personnage Mixamo, squelette
-de 65 os, ~35 Mo), chargee a la demande par
-`src/ui/threeBody/loadPushupAnimation.js` avec le `FBXLoader` de Three.js
-et jouee par un `AnimationMixer`. Ses materiaux d'origine (et leurs
-textures embarquees, qui representent l'essentiel du poids du fichier)
-sont remplaces par le shader hologramme et liberes.
+`public/models/pushup_animation/pushup.glb` (personnage Mixamo, squelette
+de 52 os), chargee a la demande par
+`src/ui/threeBody/loadPushupAnimation.js` et jouee par un
+`AnimationMixer`.
+
+### Pourquoi un .glb et pas le .fbx d'origine
+
+L'export Mixamo embarque les textures du personnage, qui representent
+l'essentiel du poids du fichier (33 Mo) alors que le rendu hologramme les
+remplace de toute facon. `scripts/fbx-to-glb.mjs` les supprime et
+reexporte en glTF binaire :
+
+```bash
+node scripts/fbx-to-glb.mjs source.fbx public/models/pushup_animation/pushup.glb
+```
+
+Resultat : 4,7 Mo au lieu de 33 Mo, charge par le meme `GLTFLoader` que le
+corps anatomique, sans embarquer `FBXLoader` dans le bundle. Le FBX source
+n'est plus dans le depot (il reste dans l'historique git) : seul le .glb
+est deploye. La meme commande sert pour toute animation ajoutee plus tard.
 
 Deux details du format Mixamo sont traites explicitement :
 
 - l'export contient un clip technique vide (`Take 001`) en plus du
-  mouvement (`mixamo.com`) : le lecteur retient le premier clip qui
-  contient reellement des pistes, sinon le personnage resterait fige
+  mouvement (`mixamo.com`) : la conversion comme le lecteur ne retiennent
+  que les clips qui contiennent reellement des pistes, sinon le
+  personnage resterait fige
 - le fichier est fourni en T-pose debout alors que l'animation se deroule
   au sol : la mise a l'echelle se fait sur la plus grande dimension (et
   non sur la hauteur), et le cadrage vise un sujet allonge pres du sol,
   avec un recul calcule d'apres la forme de l'ecran pour qu'un telephone
   en portrait ne coupe pas les extremites du corps
 
-Le rendu d'un maillage anime par squelette impose que le shader hologramme
-applique lui-meme la deformation par les os : `hologramMaterial.js`
-inclut donc les blocs `skinning` de Three.js, sans effet sur les maillages
-statiques (ils sont encadres par `#ifdef USE_SKINNING`).
+### Rendu d'un maillage deforme par un squelette
+
+Le shader hologramme ecrit a la main convient aux maillages statiques,
+mais laissait le personnage fige dans sa pose de repos : la deformation
+par les os n'etait pas appliquee. `createSkinnedHologramMaterial()`
+(`hologramMaterial.js`) part donc d'un materiau integre a Three.js, dont
+le shader de sommets gere le squelette de maniere certaine, et n'injecte
+que l'aspect hologramme dans le shader de fragments. L'eclairage calcule
+par ce materiau est entierement remplace : la scene n'a besoin d'aucune
+lumiere, comme pour les maillages statiques.
 
 Le pantin en primitives (`src/core/rig/`, anime par
 `animationClips.js` / `animateRig.js`) reste en place comme repli : il
 s'affiche immediatement pendant le telechargement du personnage, et
-persiste si celui-ci echoue. Les autres exercices n'ont pas encore de
+persiste si celui-ci echoue. L'ecran affiche l'avancement du
+telechargement puis, en cas d'echec, le message d'erreur exact : sans
+cela, un chargement long, un echec reseau et une animation qui ne joue pas
+sont impossibles a distinguer a l'oeil. Les autres exercices n'ont pas encore de
 demonstration ; si un exercice n'en a aucune, l'ecran est saute
 automatiquement et la seance demarre directement.
 
