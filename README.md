@@ -264,6 +264,29 @@ seconde, cadence hors de portee humaine. Augmenter `smoothing` (vers 1)
 reduit ce retard mais laisse repasser le bruit ; le baisser lisse
 davantage au prix de la reactivite.
 
+## Mode degrade quand la base est injoignable
+
+Le plan gratuit Supabase met en pause les projets inactifs, et le reveil
+laisse quelques instants pendant lesquels PostgREST ne connait pas encore
+les tables. L'application ne doit pas devenir inutilisable pour autant :
+compter des pompes ne depend pas de la base, seul l'enregistrement en
+depend.
+
+`src/db/errors.js` distingue donc deux familles d'echec :
+
+- `HistoriqueUnavailableError` : base momentanement absente (aucune
+  reponse, reponse d'une passerelle sans code d'erreur exploitable, ou
+  code `PGRST205` du cache de schema encore froid). L'ecran d'entree
+  laisse alors entrer malgre tout, et les ecrans de donnees affichent
+  "Donnees indisponibles : base hors ligne".
+- `HistoriqueError` : la base a bien repondu et a refuse la requete
+  (colonne absente, contrainte violee...). Le message exact est affiche,
+  car il y a quelque chose a corriger.
+
+Le recapitulatif de fin de seance distingue les deux cas : "Base hors
+ligne : seance non enregistree" (reessayer plus tard) ou "Enregistrement
+refuse : ..." (corriger la base, typiquement une migration oubliee).
+
 ## Corps 3D
 
 L'ecran de ciblage affiche un maillage anatomique reel, place dans

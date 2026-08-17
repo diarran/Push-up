@@ -1,4 +1,4 @@
-import { fetchLeaderboard, fetchUserSessions, HistoriqueError } from "../../db/historique.js";
+import { fetchLeaderboard, fetchUserSessions, describeHistoriqueError } from "../../db/historique.js";
 import { formatShortDate, formatDuration } from "../../core/date.js";
 import { escapeHtml } from "../escapeHtml.js";
 import { renderTopNav } from "../nav.js";
@@ -76,8 +76,8 @@ export function renderHomeScreen(root, ctx) {
           .join("");
       }
     } catch (err) {
-      const message = err instanceof HistoriqueError ? err.message : "Erreur de chargement";
-      el.querySelector("#historyList").innerHTML = `<p class="errorText">${escapeHtml(message)}</p>`;
+      el.querySelector("#historyList").innerHTML =
+        `<p class="errorText">${escapeHtml(describeHistoriqueError(err))}</p>`;
     }
   }
 

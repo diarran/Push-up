@@ -1,4 +1,4 @@
-import { fetchLeaderboard, HistoriqueError } from "../../db/historique.js";
+import { fetchLeaderboard, describeHistoriqueError } from "../../db/historique.js";
 import { escapeHtml } from "../escapeHtml.js";
 import { renderTopNav } from "../nav.js";
 
@@ -70,8 +70,7 @@ export function renderLeaderboardScreen(root, ctx) {
       rows = await fetchLeaderboard();
       renderList();
     } catch (err) {
-      const message = err instanceof HistoriqueError ? err.message : "Erreur de chargement";
-      list.innerHTML = `<p class="errorText">${escapeHtml(message)}</p>`;
+      list.innerHTML = `<p class="errorText">${escapeHtml(describeHistoriqueError(err))}</p>`;
     }
   }
 

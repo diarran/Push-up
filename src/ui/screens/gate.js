@@ -1,5 +1,5 @@
 import { checkGroupPasscode } from "../../auth/groupGate.js";
-import { ensureUser, HistoriqueError } from "../../db/historique.js";
+import { ensureUser, HistoriqueError, HistoriqueUnavailableError } from "../../db/historique.js";
 import { isSupabaseConfigured } from "../../lib/supabaseClient.js";
 
 // Desactive temporairement le mot de passe de groupe (debogage en cours).
@@ -59,7 +59,17 @@ export function renderGateScreen(root, ctx) {
       }
       if (!username) throw new HistoriqueError("Pseudo requis");
 
-      await ensureUser(username);
+      try {
+        await ensureUser(username);
+      } catch (err) {
+        // Base injoignable (projet en veille, reseau coupe) : on entre quand
+        // meme. Compter des pompes ne depend pas de la base ; seul
+        // l'enregistrement en depend, et il est signale la ou il echoue
+        // (recapitulatif de fin de seance, ecrans de statistiques).
+        if (!(err instanceof HistoriqueUnavailableError)) throw err;
+        console.warn("Entree en mode hors ligne :", err.message);
+      }
+
       ctx.setUsername(username);
       ctx.navigate("home");
     } catch (err) {

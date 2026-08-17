@@ -2,7 +2,7 @@ import { PoseLandmarker, DrawingUtils } from "../../core/poseEngine.js";
 import { startCameraStream, stopCameraStream } from "../../core/cameraStream.js";
 import { createExerciseEngine } from "../../core/exercises/exerciseEngine.js";
 import { getExercise } from "../../core/exercises/index.js";
-import { submitWorkoutResults } from "../../db/historique.js";
+import { submitWorkoutResults, HistoriqueUnavailableError } from "../../db/historique.js";
 import { withTimeout } from "../../core/withTimeout.js";
 import { muscleLabel } from "../../biomechanics/muscleGroups.js";
 import { formatDuration } from "../../core/date.js";
@@ -277,7 +277,12 @@ export function renderSessionScreen(root, ctx) {
         recapStatus.textContent = "Seance enregistree";
       } catch (err) {
         console.error("Enregistrement de la seance impossible", err);
-        recapStatus.textContent = "Enregistrement impossible (hors ligne ?)";
+        // Une base injoignable et une requete refusee ne demandent pas la
+        // meme reaction : reessayer plus tard, ou corriger la base.
+        recapStatus.textContent =
+          err instanceof HistoriqueUnavailableError
+            ? "Base hors ligne : seance non enregistree"
+            : `Enregistrement refuse : ${err.message}`;
       }
     } else {
       recapStatus.textContent = "Aucune repetition validee : rien n'a ete enregistre.";

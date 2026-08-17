@@ -1,11 +1,27 @@
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient.js";
 import { localDateKey } from "../core/date.js";
+import { classifyError, HistoriqueUnavailableError, UNAVAILABLE_MESSAGE } from "./errors.js";
 
-export class HistoriqueError extends Error {}
+export { HistoriqueError, HistoriqueUnavailableError, describeHistoriqueError } from "./errors.js";
+
+// Execute une requete Supabase en ramenant tous les modes d'echec a nos
+// deux types d'erreur : indisponibilite (l'application continue) ou erreur
+// de requete (a corriger).
+async function execute(query) {
+  let result;
+  try {
+    result = await query;
+  } catch {
+    // fetch a echoue : pas de reponse du tout (reseau, DNS, projet eteint).
+    throw new HistoriqueUnavailableError(UNAVAILABLE_MESSAGE);
+  }
+  if (result.error) throw classifyError(result.error);
+  return result.data;
+}
 
 function ensureConfigured() {
   if (!isSupabaseConfigured) {
-    throw new HistoriqueError("Supabase n'est pas configure (voir .env.example)");
+    throw new HistoriqueUnavailableError("Supabase n'est pas configure (voir .env.example)");
   }
 }
 
@@ -13,10 +29,12 @@ function ensureConfigured() {
 // present) est attendu et sans consequence : on l'ignore.
 export async function ensureUser(pseudo) {
   ensureConfigured();
-  const { error } = await supabase.from("utilisateurs").insert({ pseudo });
-  if (error && error.code !== "23505") {
+  try {
+    await execute(supabase.from("utilisateurs").insert({ pseudo }));
+  } catch (err) {
     // 23505 = violation de contrainte unique (pseudo deja enregistre)
-    throw new HistoriqueError(error.message);
+    if (err.code === "23505") return;
+    throw err;
   }
 }
 
@@ -25,15 +43,16 @@ export async function ensureUser(pseudo) {
 // secondes tenues : la colonne repetitions n'a qu'une seule dimension
 // numerique disponible, on l'utilise dans ce sens pour cet exercice.
 async function submitExerciseResult({ username, exerciseLabel, muscles, reps, durationSeconds }) {
-  const { error } = await supabase.from("historique").insert({
-    pseudo: username,
-    nom_exercice: exerciseLabel,
-    repetitions: Math.max(0, Math.round(reps)),
-    duree_secondes:
-      durationSeconds === null || durationSeconds === undefined ? null : Math.max(0, Math.round(durationSeconds)),
-    muscles_travailles: muscles.join(", ")
-  });
-  if (error) throw new HistoriqueError(error.message);
+  await execute(
+    supabase.from("historique").insert({
+      pseudo: username,
+      nom_exercice: exerciseLabel,
+      repetitions: Math.max(0, Math.round(reps)),
+      duree_secondes:
+        durationSeconds === null || durationSeconds === undefined ? null : Math.max(0, Math.round(durationSeconds)),
+      muscles_travailles: muscles.join(", ")
+    })
+  );
 }
 
 // results : [{ exerciseLabel, muscles, reps, durationSeconds }] - une ligne par exercice
@@ -53,10 +72,7 @@ export async function submitWorkoutResults(username, results) {
 // [{ username, totalReps, sessions, todayReps, lastSession }]
 export async function fetchLeaderboard() {
   ensureConfigured();
-  const { data, error } = await supabase
-    .from("historique")
-    .select("pseudo, repetitions, date, created_at");
-  if (error) throw new HistoriqueError(error.message);
+  const data = await execute(supabase.from("historique").select("pseudo, repetitions, date, created_at"));
 
   const todayKey = localDateKey();
 
@@ -83,13 +99,14 @@ export async function fetchLeaderboard() {
 // [{ reps, exerciseLabel, durationSeconds, performedOn, createdAt }]
 export async function fetchUserSessions(username, limit = 10) {
   ensureConfigured();
-  const { data, error } = await supabase
-    .from("historique")
-    .select("repetitions, nom_exercice, duree_secondes, date, created_at")
-    .eq("pseudo", username)
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw new HistoriqueError(error.message);
+  const data = await execute(
+    supabase
+      .from("historique")
+      .select("repetitions, nom_exercice, duree_secondes, date, created_at")
+      .eq("pseudo", username)
+      .order("created_at", { ascending: false })
+      .limit(limit)
+  );
 
   return (data || []).map((row) => ({
     reps: row.repetitions,
@@ -107,13 +124,14 @@ export async function fetchUserSessionsRange(username, days = 30) {
   const since = new Date();
   since.setDate(since.getDate() - days + 1);
 
-  const { data, error } = await supabase
-    .from("historique")
-    .select("repetitions, nom_exercice, date, created_at")
-    .eq("pseudo", username)
-    .gte("date", localDateKey(since))
-    .order("created_at", { ascending: true });
-  if (error) throw new HistoriqueError(error.message);
+  const data = await execute(
+    supabase
+      .from("historique")
+      .select("repetitions, nom_exercice, date, created_at")
+      .eq("pseudo", username)
+      .gte("date", localDateKey(since))
+      .order("created_at", { ascending: true })
+  );
 
   return (data || []).map((row) => ({
     reps: row.repetitions,

@@ -1,4 +1,4 @@
-import { fetchUserSessionsRange, HistoriqueError } from "../../db/historique.js";
+import { fetchUserSessionsRange, describeHistoriqueError } from "../../db/historique.js";
 import { dailyTotals, totalsByExercise, bestSession, computeStreak } from "../../workout/progressStats.js";
 import { withTimeout } from "../../core/withTimeout.js";
 import { renderLineChart } from "../charts/lineChart.js";
@@ -65,8 +65,7 @@ export function renderProgressScreen(root, ctx) {
       exerciseChartEl.innerHTML =
         byExercise.length > 0 ? renderBarChart(byExercise) : '<p class="emptyState">Aucune seance enregistree pour l\'instant.</p>';
     } catch (err) {
-      const message = err instanceof HistoriqueError ? err.message : "Erreur de chargement";
-      dailyChartEl.innerHTML = `<p class="errorText">${escapeHtml(message)}</p>`;
+      dailyChartEl.innerHTML = `<p class="errorText">${escapeHtml(describeHistoriqueError(err))}</p>`;
       exerciseChartEl.innerHTML = "";
     }
   }
