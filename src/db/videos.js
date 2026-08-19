@@ -18,8 +18,19 @@ function buildPath(username, extension) {
   return `${dossier}/${id}.${extension}`;
 }
 
+// MediaRecorder renvoie un type parametre ("video/webm;codecs=vp9"), que le
+// bucket refuse : ses `allowed_mime_types` ne listent que les types nus
+// ("video/webm"). Sans ce nettoyage, aucun envoi ne passe et les seances
+// n'ont jamais de video.
+function baseMimeType(mimeType) {
+  return String(mimeType || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+}
+
 function extensionFor(mimeType) {
-  return String(mimeType || "").includes("mp4") ? "mp4" : "webm";
+  return baseMimeType(mimeType).includes("mp4") ? "mp4" : "webm";
 }
 
 // Depose la video et renvoie son chemin dans le bucket. Renvoie null si
@@ -30,7 +41,7 @@ export async function uploadSessionVideo(blob, username) {
 
   const path = buildPath(username, extensionFor(blob.type));
   const { error } = await supabase.storage.from(BUCKET).upload(path, blob, {
-    contentType: blob.type || "video/webm",
+    contentType: baseMimeType(blob.type) || "video/webm",
     upsert: false
   });
 
@@ -55,14 +66,28 @@ export function sessionVideoUrl(path) {
   return data ? data.publicUrl : null;
 }
 
-// Effacement au mieux : utilise a la suppression d'un compte. Un echec ici
-// laisse un fichier orphelin, ce qui est sans consequence fonctionnelle.
+// Effacement au mieux : utilise a la suppression d'un compte et a la purge
+// des vieilles videos. Un echec laisse un fichier orphelin, ce qui est sans
+// consequence fonctionnelle mais doit rester visible : le client Storage ne
+// leve pas d'exception, il renvoie { error }, donc un try/catch seul ne
+// verrait jamais rien.
+//
+// Renvoie le nombre de fichiers effectivement supprimes.
 export async function deleteSessionVideos(paths) {
   const liste = (paths || []).filter(Boolean);
-  if (!isSupabaseConfigured || liste.length === 0) return;
+  if (!isSupabaseConfigured || liste.length === 0) return 0;
+
+  let result;
   try {
-    await supabase.storage.from(BUCKET).remove(liste);
+    result = await supabase.storage.from(BUCKET).remove(liste);
   } catch (err) {
-    console.warn("Videos non supprimees du Storage", err);
+    console.warn("Videos non supprimees du Storage (reseau)", err);
+    return 0;
   }
+
+  if (result.error) {
+    console.warn("Videos non supprimees du Storage :", result.error.message);
+    return 0;
+  }
+  return (result.data || []).length;
 }

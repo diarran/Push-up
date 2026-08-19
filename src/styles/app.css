@@ -1016,3 +1016,17 @@ button {
   gap: 10px;
   padding-bottom: 30px;
 }
+
+/* ---------- Seance annulee par l'administrateur ---------- */
+.sessionCard.isCancelled {
+  opacity: 0.6;
+  border-style: dashed;
+}
+.sessionCard.isCancelled .hReps {
+  text-decoration: line-through;
+}
+.badgeDanger {
+  background: rgba(211, 47, 47, 0.16);
+  color: #ff6b6b;
+  border: 1px solid rgba(211, 47, 47, 0.45);
+}

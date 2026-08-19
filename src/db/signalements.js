@@ -6,7 +6,7 @@
 // la base. Un membre qui bidouillerait la console n'obtiendrait rien de
 // plus qu'un signalement de plus dans la file.
 
-import { supabase, execute, ensureConfigured, isMissingFunction } from "./execute.js";
+import { supabase, execute, ensureConfigured, isMissingFunction, isMissingTable } from "./execute.js";
 import { HistoriqueError } from "./errors.js";
 
 export const TYPE_RECALCUL = "recalcul";
@@ -20,12 +20,8 @@ export function isModerationSupported() {
   return moderationSupported;
 }
 
-function isMissingTable(err) {
-  const code = err && err.code;
-  const message = (err && err.message) || "";
-  // PGRST205 : table inconnue de PostgREST. 42P01 : table absente cote
-  // Postgres. Les deux signifient ici "migration 0003 pas executee".
-  return code === "42P01" || (code === "PGRST205" && message.includes("signalements"));
+function tableAbsente(err) {
+  return isMissingTable(err, "signalements");
 }
 
 function markUnsupported() {
@@ -59,7 +55,7 @@ export async function reportSession({ sessionId, author, type, motif, proposedRe
       })
     );
   } catch (err) {
-    if (isMissingTable(err)) {
+    if (tableAbsente(err)) {
       markUnsupported();
       throw new HistoriqueError("Signalements indisponibles : migration 0003 non executee");
     }
@@ -95,7 +91,7 @@ export async function fetchReports(status = null, limit = 50) {
     const data = await execute(query);
     return (data || []).map(mapReport);
   } catch (err) {
-    if (isMissingTable(err)) {
+    if (tableAbsente(err)) {
       markUnsupported();
       return [];
     }
@@ -122,7 +118,7 @@ export async function fetchReportsForSessions(sessionIds) {
     }
     return map;
   } catch (err) {
-    if (isMissingTable(err)) {
+    if (tableAbsente(err)) {
       markUnsupported();
       return new Map();
     }

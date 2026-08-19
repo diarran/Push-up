@@ -260,6 +260,27 @@ l'accueil. La suppression demande le code et la ressaisie du pseudo, puis
 efface le compte, tout son historique (cascade) et ses videos. C'est la
 reponse aux fautes de frappe et aux comptes crees par erreur.
 
+Un compte **sans code** n'est supprimable sans justificatif que s'il n'a
+**aucune seance** : c'est exactement le cas du pseudo mal orthographie. Des
+qu'il a un historique, il faut son code ou celui de l'administrateur.
+L'application cree en effet des comptes sans code chaque fois que la base
+est injoignable pendant une seance ; sans cette regle, il aurait suffi de
+lister les comptes sans code pour effacer leur historique.
+
+### Essais limites
+
+Un code a 4 chiffres, c'est 10 000 combinaisons : sans limite d'essais, le
+deviner est l'affaire de quelques secondes pour un script. La migration
+0004 ajoute donc un compteur d'echecs (`codes_acces.echecs`) et un blocage
+de 15 minutes au bout de 5 essais errones, ce qui ramene une enumeration
+complete a plusieurs jours d'attente. Un code juste remet le compteur a
+zero, pour qu'une faute de frappe de temps en temps ne bloque personne.
+
+Toutes les verifications passent par une seule fonction interne
+(`verifier_code_interne`), y compris celle du code administrateur. C'est
+volontaire : tant que la moindre fonction comparait un code sans compter
+l'essai, elle servait d'oracle et le blocage ne servait a rien.
+
 ### Administrateur
 
 Le compte de moderation est le pseudo **`Admin`**, code **`2424`** a
@@ -347,7 +368,8 @@ de reecrire le catalogue `LIGNES` ; la structure ne bouge pas.
 1. Creer un projet gratuit sur supabase.com.
 2. Ouvrir l'editeur SQL du projet et executer, dans l'ordre, chaque fichier
    de `supabase/migrations/` (`0001_init.sql`, `0002_duree_seances.sql`,
-   puis `0003_comptes_signalements_videos.sql`). La migration 0003 cree
+   `0003_comptes_signalements_videos.sql`, puis
+   `0004_anti_force_brute.sql`). La migration 0003 cree
    aussi le bucket Storage `seances` ; si votre projet refuse d'ecrire dans
    le schema `storage`, creez-le a la main (Storage > New bucket > nom
    `seances`, case "Public bucket" cochee).
@@ -612,10 +634,17 @@ le seul levier logiciel restant pour un cadrage plus large.
   Ajouter une remise a zero du code par l'administrateur serait le
   complement naturel : la fonction `modifier_code_pin` existe deja, il
   suffirait d'une variante acceptant le code administrateur.
-- **Code PIN a 4 chiffres = 10 000 combinaisons.** Rien ne limite le nombre
-  d'essais cote base. Contre un ami curieux qui tape a la main c'est
-  suffisant ; contre un script, non. Une limitation par tentatives dans
-  `verifier_code_pin` serait a ajouter si le lien sortait du groupe.
+- **Un code bloque peut servir a embeter quelqu'un.** Depuis la migration
+  0004, 5 essais errones bloquent un compte 15 minutes (c'est ce qui rend
+  l'enumeration d'un code a 4 chiffres impraticable). Le revers : n'importe
+  qui connaissant un pseudo peut maintenir ce compte bloque en se trompant
+  volontairement, y compris celui de l'administrateur. Genant, jamais
+  destructeur, et le blocage se leve tout seul.
+- **Reprendre un compte sans code reste possible.** L'ecran d'entree
+  previent quand le pseudo vise a deja un historique, et la base marque la
+  reprise (`codes_acces.adopte`), mais elle ne l'interdit pas : l'interdire
+  priverait definitivement de leur historique les membres dont le compte
+  date d'avant les codes PIN.
 - **Videos non transcodees et jamais purgees automatiquement.** Chaque
   seance filmee pese quelques megaoctets dans le bucket `seances` (1 Go
   offert sur le plan gratuit Supabase). Rien ne supprime les vieilles

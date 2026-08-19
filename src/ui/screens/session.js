@@ -395,19 +395,52 @@ export function renderSessionScreen(root, ctx) {
     }
   }
 
+  // La taille du canvas est figee au demarrage de l'enregistrement (voir
+  // flipCamera) alors que la camera arriere renvoie souvent un cadrage
+  // different, typiquement paysage la ou l'avant est portrait. Etirer
+  // l'image donnerait une video de preuve deformee, donc inutilisable pour
+  // juger une pompe : on l'inscrit dans le canvas en gardant ses
+  // proportions, avec des bandes noires si besoin.
+  // Renvoie le rectangle occupe par l'image dans le canvas, dont le
+  // squelette a besoin pour se superposer au bon endroit.
+  function drawVideoFitted() {
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return { x: 0, y: 0, width: canvas.width, height: canvas.height };
+
+    const echelle = Math.min(canvas.width / vw, canvas.height / vh);
+    const width = vw * echelle;
+    const height = vh * echelle;
+    const x = (canvas.width - width) / 2;
+    const y = (canvas.height - height) / 2;
+    ctx2d.drawImage(video, x, y, width, height);
+    return { x, y, width, height };
+  }
+
+  // DrawingUtils multiplie les coordonnees normalisees par la taille du
+  // canvas. Quand l'image ne remplit pas tout le canvas (bandes noires
+  // apres un changement de camera), il faut donc ramener son repere sur le
+  // rectangle reellement dessine, sinon le squelette flotte a cote du
+  // corps - et la video de preuve ne prouve plus rien.
+  function drawLandmarksFitted(lms, rect) {
+    ctx2d.save();
+    ctx2d.translate(rect.x, rect.y);
+    ctx2d.scale(rect.width / canvas.width, rect.height / canvas.height);
+    drawingUtils.drawConnectors(lms, PoseLandmarker.POSE_CONNECTIONS, { color: "#00e676", lineWidth: 3 });
+    drawingUtils.drawLandmarks(lms, { color: "#ffffff", radius: 3 });
+    ctx2d.restore();
+  }
+
   function processResult(result) {
     ensureCanvasSize();
     if (!canvasReady) return;
 
     ctx2d.save();
     ctx2d.clearRect(0, 0, canvas.width, canvas.height);
-    ctx2d.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const rect = drawVideoFitted();
 
     const lms = result.landmarks && result.landmarks[0];
-    if (lms) {
-      drawingUtils.drawConnectors(lms, PoseLandmarker.POSE_CONNECTIONS, { color: "#00e676", lineWidth: 3 });
-      drawingUtils.drawLandmarks(lms, { color: "#ffffff", radius: 3 });
-    }
+    if (lms) drawLandmarksFitted(lms, rect);
 
     if (phase !== "working") {
       ctx2d.restore();

@@ -82,6 +82,7 @@ export function renderGateScreen(root, ctx) {
   let step = "pseudo";
   let pendingUsername = "";
   let pendingIsAdmin = false;
+  let pendingSessionCount = 0;
 
   function showError(message) {
     errorEl.textContent = message;
@@ -99,14 +100,25 @@ export function renderGateScreen(root, ctx) {
     return "Creer le code";
   }
 
-  const TEXTES = {
+  // Fonction et non objet constant : le texte d'adoption depend du nombre
+  // de seances du compte vise, qui n'est connu qu'apres la premiere etape.
+  const textesPour = (etape) => ({
     creation: {
       hint: "Choisis un code de 4 a 6 chiffres. Il te sera demande a chaque connexion : c'est ce qui empeche quelqu'un d'autre d'entrer sous ton pseudo.",
       label: "Nouveau code (4 a 6 chiffres)",
       confirm: true
     },
     adoption: {
-      hint: "Ce compte existe mais n'a pas encore de code. Pose-en un maintenant pour le proteger.",
+      // Poser un code sur un compte existant est le seul moyen de reprendre
+      // la main sur un pseudo cree avant les codes PIN. C'est aussi, par
+      // construction, le moyen de s'approprier le compte d'un autre : d'ou
+      // l'avertissement explicite des qu'il y a un historique a perdre.
+      hint:
+        pendingSessionCount > 0
+          ? `Attention : ce pseudo a deja ${pendingSessionCount} seance${
+              pendingSessionCount > 1 ? "s" : ""
+            } enregistree${pendingSessionCount > 1 ? "s" : ""}. Si ce n'est pas ton compte, reviens en arriere et choisis un autre pseudo. Sinon, pose ton code : il le protegera.`
+          : "Ce compte existe mais n'a pas encore de code. Pose-en un maintenant pour le proteger.",
       label: "Nouveau code (4 a 6 chiffres)",
       confirm: true
     },
@@ -115,7 +127,7 @@ export function renderGateScreen(root, ctx) {
       label: "Code",
       confirm: false
     }
-  };
+  })[etape];
 
   function goToStep(next) {
     step = next;
@@ -131,7 +143,7 @@ export function renderGateScreen(root, ctx) {
       return;
     }
 
-    const textes = TEXTES[next];
+    const textes = textesPour(next);
     usernameField.hidden = true;
     pinSection.hidden = false;
     backBtn.hidden = false;
@@ -179,6 +191,7 @@ export function renderGateScreen(root, ctx) {
     }
 
     pendingIsAdmin = state.isAdmin;
+    pendingSessionCount = state.sessionCount || 0;
     if (state.hasPin) goToStep("connexion");
     else if (state.exists) goToStep("adoption");
     else goToStep("creation");
@@ -241,6 +254,7 @@ export function renderGateScreen(root, ctx) {
   backBtn.addEventListener("click", () => {
     pendingUsername = "";
     pendingIsAdmin = false;
+    pendingSessionCount = 0;
     goToStep("pseudo");
   });
 

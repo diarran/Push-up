@@ -2,6 +2,7 @@ import { fetchUserSessions, describeHistoriqueError } from "../../db/historique.
 import {
   fetchReportsForSessions,
   reportSession,
+  isModerationSupported,
   TYPE_RECALCUL,
   TYPE_ANNULATION
 } from "../../db/signalements.js";
@@ -68,6 +69,11 @@ export function renderProfileScreen(root, ctx) {
 
   function statusBadge(session) {
     const reports = reportsBySession.get(session.id) || [];
+    // L'annulation prime : la seance ne compte plus nulle part, c'est
+    // l'information la plus importante a afficher.
+    if (session.cancelled) {
+      return '<span class="badge badgeDanger">Annulee par l\'administrateur</span>';
+    }
     const pending = reports.filter((r) => r.status === "en_attente");
     if (pending.length > 0) {
       return `<span class="badge badgeWarn">Signalee (${pending.length})</span>`;
@@ -89,7 +95,7 @@ export function renderProfileScreen(root, ctx) {
         : "-";
 
     return `
-      <div class="sessionCard" data-session="${escapeHtml(session.id)}">
+      <div class="sessionCard${session.cancelled ? " isCancelled" : ""}" data-session="${escapeHtml(session.id)}">
         <div class="sessionTop">
           <div>
             <div class="hDate">${escapeHtml(formatShortDate(session.performedOn))}</div>
@@ -105,7 +111,10 @@ export function renderProfileScreen(root, ctx) {
               : `<span class="noVideoTag">Aucune video</span>`
           }
           ${
-            isSelf
+            // Pas de bouton sur ses propres seances, ni quand la migration
+            // 0003 manque : proposer une action qui echouera a coup sur ne
+            // sert qu'a afficher une erreur.
+            isSelf || session.cancelled || !isModerationSupported()
               ? ""
               : `<button class="ghostPill" data-action="report">Signaler</button>`
           }
@@ -189,10 +198,19 @@ export function renderProfileScreen(root, ctx) {
           motif: slot.querySelector(".reportMotif").value,
           proposedReps: typeEl.value === TYPE_RECALCUL ? Number(slot.querySelector(".reportReps").value) : null
         });
-        statusEl.textContent = "Signalement envoye. L'administrateur tranchera.";
-        statusEl.className = "reportStatus okText";
-        submitBtn.hidden = true;
-        await load();
+
+        // Surtout pas de rechargement ici : il reconstruirait toute la
+        // liste et emporterait la confirmation avant qu'elle soit lue.
+        // On met a jour l'etiquette de la carte a la main, et la liste se
+        // rafraichira a la prochaine ouverture de l'ecran.
+        form.innerHTML = '<p class="reportStatus okText">Signalement envoye. L\'administrateur tranchera.</p>';
+        const reports = reportsBySession.get(session.id) || [];
+        reports.push({ status: "en_attente" });
+        reportsBySession.set(session.id, reports);
+        const badge = card.querySelector(".badge");
+        const nouveau = statusBadge(session);
+        if (badge) badge.outerHTML = nouveau;
+        else card.querySelector(".sessionTop").insertAdjacentHTML("afterend", nouveau);
       } catch (err) {
         statusEl.textContent = describeHistoriqueError(err);
         statusEl.className = "reportStatus errorText";
@@ -220,23 +238,30 @@ export function renderProfileScreen(root, ctx) {
   }
 
   function renderStats() {
-    const total = sessions.reduce((sum, s) => sum + s.reps, 0);
-    const timed = sessions.filter((s) => s.durationSeconds != null);
+    // Les seances annulees sont affichees dans la liste mais ne comptent
+    // dans aucun total : sinon ce profil contredirait le classement, qui
+    // les exclut.
+    const comptees = sessions.filter((s) => !s.cancelled);
+    const total = comptees.reduce((sum, s) => sum + s.reps, 0);
+    const timed = comptees.filter((s) => s.durationSeconds != null);
     const totalTime = timed.reduce((sum, s) => sum + s.durationSeconds, 0);
-    const best = sessions.reduce((max, s) => Math.max(max, s.reps), 0);
-    const withVideo = sessions.filter((s) => s.videoPath).length;
+    const best = comptees.reduce((max, s) => Math.max(max, s.reps), 0);
+    const withVideo = comptees.filter((s) => s.videoPath).length;
 
     el.querySelector("#pTotal").textContent = total;
-    el.querySelector("#pSessions").textContent = sessions.length;
+    el.querySelector("#pSessions").textContent = comptees.length;
     el.querySelector("#pBest").textContent = best;
     el.querySelector("#pTime").textContent = timed.length > 0 ? formatDuration(totalTime) : "-";
-    el.querySelector("#pAvg").textContent = sessions.length > 0 ? Math.round(total / sessions.length) : 0;
-    el.querySelector("#pVideos").textContent = `${withVideo}/${sessions.length}`;
+    el.querySelector("#pAvg").textContent = comptees.length > 0 ? Math.round(total / comptees.length) : 0;
+    el.querySelector("#pVideos").textContent = `${withVideo}/${comptees.length}`;
   }
 
   async function load() {
     try {
-      sessions = await fetchUserSessions(target, SESSION_LIMIT);
+      // Les seances annulees restent visibles ici, barrees : leur auteur
+      // doit pouvoir constater la decision, pas voir une seance disparaitre
+      // sans explication.
+      sessions = await fetchUserSessions(target, SESSION_LIMIT, { includeCancelled: true });
       // Les signalements sont un bonus d'affichage : leur absence (migration
       // 0003 pas executee) ne doit pas vider la liste des seances.
       try {

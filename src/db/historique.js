@@ -34,8 +34,25 @@ function isMissingModerationColumn(err) {
   return isMissingColumn(err, "video_path") || isMissingColumn(err, "annulee") || isMissingColumn(err, "repetitions_initiales");
 }
 
-export function isModerationAvailable() {
-  return moderationColumnsAvailable;
+// Desactive le groupe de colonnes que l'erreur designe. Renvoie false si
+// l'erreur ne parle d'aucune colonne connue : l'appelant doit alors la
+// laisser remonter.
+//
+// Une base ne peut signaler qu'une colonne manquante a la fois, alors qu'il
+// peut en manquer plusieurs (aucune migration passee depuis 0001). C'est
+// pour ca que les appelants reessaient en boucle et non une seule fois :
+// avec un seul essai, la deuxieme colonne absente fait echouer la requete
+// pour de bon, et l'ecran affiche une erreur au lieu de se degrader.
+function disableMissingColumns(err) {
+  if (isMissingDurationColumn(err)) {
+    durationColumnAvailable = false;
+    return true;
+  }
+  if (isMissingModerationColumn(err)) {
+    moderationColumnsAvailable = false;
+    return true;
+  }
+  return false;
 }
 
 async function submitExerciseResult({ username, exerciseLabel, muscles, reps, durationSeconds, videoPath }) {
@@ -54,27 +71,39 @@ async function submitExerciseResult({ username, exerciseLabel, muscles, reps, du
     row.video_path = videoPath;
   }
 
-  try {
-    await execute(supabase.from("historique").insert(row));
-  } catch (err) {
-    if (isMissingDurationColumn(err)) {
-      durationColumnAvailable = false;
-      delete row.duree_secondes;
-      console.warn(
-        "Colonne duree_secondes absente : seance enregistree sans duree. " +
-          "Executer supabase/migrations/0002_duree_seances.sql pour l'activer."
-      );
-    } else if (isMissingModerationColumn(err)) {
-      moderationColumnsAvailable = false;
-      delete row.video_path;
-      console.warn(
-        "Colonne video_path absente : seance enregistree sans video. " +
-          "Executer supabase/migrations/0003_comptes_signalements_videos.sql pour l'activer."
-      );
-    } else {
-      throw err;
+  // Boucle plutot qu'un seul reessai : il peut manquer la colonne de 0002
+  // ET celles de 0003. Perdre une seance parce qu'une migration a ete
+  // oubliee serait le pire resultat possible ici.
+  for (;;) {
+    try {
+      await execute(supabase.from("historique").insert(row));
+      return;
+    } catch (err) {
+      if (!disableMissingColumns(err)) throw err;
+
+      let allege = false;
+      if (!durationColumnAvailable && "duree_secondes" in row) {
+        delete row.duree_secondes;
+        allege = true;
+        console.warn(
+          "Colonne duree_secondes absente : seance enregistree sans duree. " +
+            "Executer supabase/migrations/0002_duree_seances.sql pour l'activer."
+        );
+      }
+      if (!moderationColumnsAvailable && "video_path" in row) {
+        delete row.video_path;
+        allege = true;
+        console.warn(
+          "Colonne video_path absente : seance enregistree sans video. " +
+            "Executer supabase/migrations/0003_comptes_signalements_videos.sql pour l'activer."
+        );
+      }
+
+      // La base refuse une colonne que la ligne ne porte deja plus : on ne
+      // sait pas quoi retirer de plus, et reessayer a l'identique
+      // tournerait en boucle.
+      if (!allege) throw err;
     }
-    await execute(supabase.from("historique").insert(row));
   }
 }
 
@@ -96,29 +125,31 @@ export async function submitWorkoutResults(username, results, { videoPath = null
 // l'administrateur sont exclues partout : elles ne comptent plus ni au
 // classement ni dans les statistiques, mais restent en base comme trace de
 // la decision (elles reapparaissent, marquees, sur l'ecran de profil).
-function selectSessions(columns, build) {
-  const run = async () => {
+async function selectSessions(columns, build, { includeCancelled = false } = {}) {
+  // Meme boucle que pour l'ecriture : autant de tentatives que de groupes
+  // de colonnes a retirer, jamais une seule.
+  for (;;) {
+    const avecDuree = durationColumnAvailable;
+    const avecModeration = moderationColumnsAvailable;
+
     const cols = [
       ...columns,
-      ...(durationColumnAvailable ? ["duree_secondes"] : []),
-      ...(moderationColumnsAvailable ? ["video_path", "annulee", "repetitions_initiales"] : [])
+      ...(avecDuree ? ["duree_secondes"] : []),
+      ...(avecModeration ? ["video_path", "annulee", "repetitions_initiales"] : [])
     ].join(", ");
 
     let query = supabase.from("historique").select(cols);
-    if (moderationColumnsAvailable) query = query.eq("annulee", false);
-    return execute(build(query));
-  };
+    if (avecModeration && !includeCancelled) query = query.eq("annulee", false);
 
-  return run().catch((err) => {
-    if (isMissingDurationColumn(err)) {
-      durationColumnAvailable = false;
-    } else if (isMissingModerationColumn(err)) {
-      moderationColumnsAvailable = false;
-    } else {
-      throw err;
+    try {
+      return await execute(build(query));
+    } catch (err) {
+      if (!disableMissingColumns(err)) throw err;
+      // Aucun groupe de colonnes n'a change : reessayer donnerait le meme
+      // resultat.
+      if (avecDuree === durationColumnAvailable && avecModeration === moderationColumnsAvailable) throw err;
     }
-    return run();
-  });
+  }
 }
 
 function mapSession(row) {
@@ -163,11 +194,18 @@ export async function fetchLeaderboard() {
 }
 
 // Historique recent d'un pseudo :
-// [{ id, reps, exerciseLabel, durationSeconds, videoPath, performedOn, createdAt }]
-export async function fetchUserSessions(username, limit = 10) {
+// [{ id, reps, exerciseLabel, durationSeconds, videoPath, cancelled, performedOn, createdAt }]
+//
+// includeCancelled : garde les seances annulees par l'administrateur, pour
+// que l'ecran de profil puisse les afficher barrees plutot que de les faire
+// disparaitre sans explication. Elles restent exclues partout ailleurs
+// (classement, statistiques, accueil).
+export async function fetchUserSessions(username, limit = 10, { includeCancelled = false } = {}) {
   ensureConfigured();
-  const data = await selectSessions(["id", "repetitions", "nom_exercice", "date", "created_at"], (q) =>
-    q.eq("pseudo", username).order("created_at", { ascending: false }).limit(limit)
+  const data = await selectSessions(
+    ["id", "repetitions", "nom_exercice", "date", "created_at"],
+    (q) => q.eq("pseudo", username).order("created_at", { ascending: false }).limit(limit),
+    { includeCancelled }
   );
   return (data || []).map(mapSession);
 }
@@ -194,18 +232,12 @@ export async function fetchSessionsByIds(ids) {
   const liste = (ids || []).filter(Boolean);
   if (liste.length === 0) return new Map();
 
-  const columns = [
-    "id",
-    "pseudo",
-    "repetitions",
-    "nom_exercice",
-    "date",
-    "created_at",
-    ...(durationColumnAvailable ? ["duree_secondes"] : []),
-    ...(moderationColumnsAvailable ? ["video_path", "annulee", "repetitions_initiales"] : [])
-  ].join(", ");
+  const data = await selectSessions(
+    ["id", "pseudo", "repetitions", "nom_exercice", "date", "created_at"],
+    (q) => q.in("id", liste),
+    { includeCancelled: true }
+  );
 
-  const data = await execute(supabase.from("historique").select(columns).in("id", liste));
   const map = new Map();
   for (const row of data || []) {
     map.set(row.id, { ...mapSession(row), username: row.pseudo });

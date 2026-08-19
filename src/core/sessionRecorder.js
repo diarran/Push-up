@@ -69,16 +69,20 @@ export function startSessionRecording(canvas) {
   // les donnees qu'a l'arret, et une coupure en cours de seance perd tout.
   recorder.start(1000);
 
-  // Garde-fou : une seance oubliee ne doit pas remplir la memoire du
-  // telephone. Au-dela de la limite, on arrete d'accumuler.
-  const limitId = setTimeout(() => {
-    if (recorder.state === "recording") recorder.stop();
-  }, MAX_DURATION_MS);
-
   function releaseStream() {
     clearTimeout(limitId);
     stream.getTracks().forEach((track) => track.stop());
   }
+
+  // Garde-fou : une seance oubliee ne doit pas remplir la memoire du
+  // telephone. Au-dela de la limite, on arrete d'accumuler - et on coupe
+  // aussi la capture du canvas, sinon la piste reste vivante jusqu'a la
+  // fermeture de l'onglet (temoin d'enregistrement allume sur certains
+  // navigateurs) alors que plus personne ne l'ecoute.
+  const limitId = setTimeout(() => {
+    if (recorder.state === "recording") recorder.stop();
+    releaseStream();
+  }, MAX_DURATION_MS);
 
   return {
     get active() {

@@ -29,7 +29,16 @@ export function classifyError(error) {
   // mais d'un intermediaire (passerelle Cloudflare en 521, page HTML
   // d'erreur...) : c'est une indisponibilite, pas une requete invalide.
   if (!isDatabaseAnswer || TRANSIENT_CODES.has(code)) {
-    return new HistoriqueUnavailableError(UNAVAILABLE_MESSAGE);
+    const err = new HistoriqueUnavailableError(UNAVAILABLE_MESSAGE);
+    // Le message affiche est volontairement generique, mais le code et le
+    // texte d'origine sont conserves : `PGRST205` veut dire "PostgREST ne
+    // connait pas cette table", ce qui peut etre un cache encore froid
+    // (transitoire) ou une migration jamais executee (definitif). Seul le
+    // message d'origine, qui nomme la table, permet de trancher, et sans
+    // ces champs le code appelant n'a plus rien pour le faire.
+    err.code = code;
+    err.detail = (error && error.message) || "";
+    return err;
   }
 
   const err = new HistoriqueError(error.message);

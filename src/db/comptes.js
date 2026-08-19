@@ -20,10 +20,6 @@ export const ADMIN_USERNAME = "Admin";
 // ne pas retenter a chaque ecran.
 let pinSupported = true;
 
-export function isPinSupported() {
-  return pinSupported;
-}
-
 // Levee quand la migration 0003 manque : les ecrans la traitent comme
 // "continuer sans code", pas comme une erreur a afficher.
 export class PinNotSupportedError extends HistoriqueError {}
@@ -53,7 +49,11 @@ export async function fetchAccountState(pseudo) {
   return {
     exists: Boolean(row && row.existe),
     hasPin: Boolean(row && row.a_un_code),
-    isAdmin: Boolean(row && row.est_admin)
+    isAdmin: Boolean(row && row.est_admin),
+    // Absent tant que la migration 0004 n'est pas passee : on ne peut
+    // alors pas prevenir qu'un compte a deja un historique, mais rien ne
+    // casse pour autant.
+    sessionCount: row && typeof row.nb_seances === "number" ? row.nb_seances : null
   };
 }
 
