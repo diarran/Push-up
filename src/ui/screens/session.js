@@ -2,12 +2,18 @@ import { PoseLandmarker, DrawingUtils } from "../../core/poseEngine.js";
 import { startCameraStream, stopCameraStream } from "../../core/cameraStream.js";
 import { createExerciseEngine } from "../../core/exercises/exerciseEngine.js";
 import { getExercise } from "../../core/exercises/index.js";
-import { submitWorkoutResults, HistoriqueUnavailableError } from "../../db/historique.js";
+import { submitWorkoutResults, fetchUserSessions, HistoriqueUnavailableError } from "../../db/historique.js";
+import { startSessionRecording } from "../../core/sessionRecorder.js";
+import { uploadSessionVideo } from "../../db/videos.js";
+import { trashTalkForRecap } from "../../social/trashTalk.js";
 import { withTimeout } from "../../core/withTimeout.js";
 import { muscleLabel } from "../../biomechanics/muscleGroups.js";
 import { formatDuration } from "../../core/date.js";
 
 const SUBMIT_TIMEOUT_MS = 6000;
+// L'envoi de la video est plus long que celui des chiffres : plusieurs Mo
+// depuis un telephone. On lui laisse donc son propre delai, plus large.
+const UPLOAD_TIMEOUT_MS = 60000;
 const FLASH_DURATION_MS = 380;
 
 export function renderSessionScreen(root, ctx) {
@@ -58,6 +64,7 @@ export function renderSessionScreen(root, ctx) {
           <div class="recapLabel">Duree</div>
         </div>
       </div>
+      <p id="recapTrashTalk" class="recapTrashTalk"></p>
       <p id="recapStatus" class="recapStatus"></p>
       <button id="recapHomeBtn" class="primaryBtn">Retour a l'accueil</button>
     </div>
@@ -86,6 +93,16 @@ export function renderSessionScreen(root, ctx) {
   let rafId = null;
   let ended = false;
   let facingMode = "user";
+
+  // Enregistrement video de la seance : demarre des que le canvas a une
+  // taille (donc des la premiere image dessinee) et s'arrete avec la
+  // seance. Sert a verifier une performance contestee (voir profil et
+  // signalements).
+  let recorder = null;
+
+  // Meilleure seance precedente, chargee en fond : sert uniquement a savoir
+  // si la seance en cours bat un record, pour la pique de fin.
+  let personalBest = null;
 
   let blockIndex = 0;
   let setIndex = 0;
@@ -266,8 +283,11 @@ export function renderSessionScreen(root, ctx) {
     if (rafId) cancelAnimationFrame(rafId);
     rafId = null;
     stopCameraStream(video);
-    canvasReady = false;
     lastVideoTime = -1;
+    // La taille du canvas est volontairement conservee : captureStream la
+    // fige au demarrage de l'enregistrement, et la redimensionner en cours
+    // de route casse la video sur plusieurs navigateurs. drawImage met de
+    // toute facon l'image de la nouvelle camera a l'echelle du canvas.
 
     facingMode = facingMode === "user" ? "environment" : "user";
     applyMirror();
@@ -284,10 +304,27 @@ export function renderSessionScreen(root, ctx) {
     }
   }
 
+  // Recupere la video enregistree. Un echec ici ne doit jamais empecher
+  // d'enregistrer le score : la video est une preuve d'appoint, pas la
+  // performance elle-meme.
+  async function collectVideo() {
+    if (!recorder) return null;
+    try {
+      return await recorder.stop();
+    } catch (err) {
+      console.warn("Video de seance illisible", err);
+      return null;
+    } finally {
+      recorder = null;
+    }
+  }
+
   async function finishWorkout() {
     if (ended) return;
     ended = true;
     phase = "finished";
+
+    const videoPromise = collectVideo();
     stopCamera();
     if (timerIntervalId) clearInterval(timerIntervalId);
     timerIntervalId = null;
@@ -301,24 +338,42 @@ export function renderSessionScreen(root, ctx) {
 
     el.querySelector("#recapReps").textContent = totalReps;
     el.querySelector("#recapDuration").textContent = formatDuration(durationSeconds);
+    el.querySelector("#recapTrashTalk").textContent = trashTalkForRecap({ reps: totalReps, personalBest });
     recapOverlay.classList.add("visible");
 
-    if (totalReps > 0) {
-      recapStatus.textContent = "Enregistrement...";
-      try {
-        await withTimeout(submitWorkoutResults(username, results), SUBMIT_TIMEOUT_MS);
-        recapStatus.textContent = "Seance enregistree";
-      } catch (err) {
-        console.error("Enregistrement de la seance impossible", err);
-        // Une base injoignable et une requete refusee ne demandent pas la
-        // meme reaction : reessayer plus tard, ou corriger la base.
-        recapStatus.textContent =
-          err instanceof HistoriqueUnavailableError
-            ? "Base hors ligne : seance non enregistree"
-            : `Enregistrement refuse : ${err.message}`;
-      }
-    } else {
+    if (totalReps === 0) {
       recapStatus.textContent = "Aucune repetition validee : rien n'a ete enregistre.";
+      return;
+    }
+
+    // Video d'abord : son chemin part avec la seance, ce qui evite toute
+    // mise a jour de ligne apres coup (la table historique n'accepte que
+    // des insertions).
+    let videoPath = null;
+    const blob = await videoPromise;
+    if (blob) {
+      recapStatus.textContent = "Envoi de la video...";
+      try {
+        videoPath = await withTimeout(uploadSessionVideo(blob, username), UPLOAD_TIMEOUT_MS);
+      } catch (err) {
+        console.warn("Video non envoyee", err);
+      }
+    }
+
+    recapStatus.textContent = "Enregistrement...";
+    try {
+      await withTimeout(submitWorkoutResults(username, results, { videoPath }), SUBMIT_TIMEOUT_MS);
+      recapStatus.textContent = videoPath
+        ? "Seance enregistree, video jointe"
+        : "Seance enregistree (sans video)";
+    } catch (err) {
+      console.error("Enregistrement de la seance impossible", err);
+      // Une base injoignable et une requete refusee ne demandent pas la
+      // meme reaction : reessayer plus tard, ou corriger la base.
+      recapStatus.textContent =
+        err instanceof HistoriqueUnavailableError
+          ? "Base hors ligne : seance non enregistree"
+          : `Enregistrement refuse : ${err.message}`;
     }
   }
 
@@ -334,6 +389,9 @@ export function renderSessionScreen(root, ctx) {
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       canvasReady = true;
+      // captureStream fige la taille au moment de l'appel : on n'enregistre
+      // donc qu'une fois le canvas dimensionne.
+      if (!recorder && !ended) recorder = startSessionRecording(canvas);
     }
   }
 
@@ -416,6 +474,14 @@ export function renderSessionScreen(root, ctx) {
     }
   }
 
+  // Sans reseau, pas de record connu : la pique de fin se rabat alors sur
+  // le simple nombre de repetitions.
+  fetchUserSessions(username, 50)
+    .then((sessions) => {
+      personalBest = sessions.reduce((max, s) => Math.max(max, s.reps), 0) || null;
+    })
+    .catch(() => {});
+
   endBtn.addEventListener("click", abortWorkout);
   cameraFlipBtn.addEventListener("click", flipCamera);
   el.querySelector("#recapHomeBtn").addEventListener("click", () => ctx.navigate("home"));
@@ -424,6 +490,12 @@ export function renderSessionScreen(root, ctx) {
 
   return () => {
     stopCamera();
+    // Depart en cours de seance : la video n'ira nulle part, on libere tout
+    // de suite plutot que de garder les morceaux en memoire.
+    if (recorder) {
+      recorder.cancel();
+      recorder = null;
+    }
     if (timerIntervalId) clearInterval(timerIntervalId);
     timerIntervalId = null;
   };

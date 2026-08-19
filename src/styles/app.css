@@ -752,3 +752,267 @@ button {
 .recapOverlay .primaryBtn {
   max-width: 320px;
 }
+
+/* ---------- Trash talk ---------- */
+.trashTalk {
+  margin: 0 20px 4px 20px;
+  padding: 12px 14px;
+  background: rgba(211, 47, 47, 0.12);
+  border: 1px solid rgba(211, 47, 47, 0.4);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-md);
+  color: #ffb4b4;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+}
+.recapTrashTalk {
+  margin: 0;
+  max-width: 320px;
+  color: #ffb4b4;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+/* ---------- Classement cliquable ---------- */
+.leaderboardRow {
+  width: 100%;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+}
+.leaderboardRow:active {
+  transform: scale(0.99);
+}
+.lbChevron {
+  color: var(--text-faint);
+  font-size: 1.2rem;
+  line-height: 1;
+  padding-left: 4px;
+}
+.lbHint {
+  margin: 8px 20px 0 20px;
+}
+
+/* ---------- Profil d'un membre ---------- */
+.profileHeader {
+  padding: 18px 20px 0 20px;
+}
+.profileHeader h1 {
+  margin: 6px 0 2px 0;
+  font-size: 1.5rem;
+}
+.backLink {
+  align-self: flex-start;
+  padding: 0 0 6px 0;
+}
+.sessionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.sessionTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.sessionActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.noVideoTag {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  font-style: italic;
+}
+.sessionVideo {
+  width: 100%;
+  max-height: 60vh;
+  border-radius: 12px;
+  background: #000;
+}
+.videoSlot,
+.reportSlot {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- Etiquettes d'etat ---------- */
+.badge {
+  align-self: flex-start;
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badgeWarn {
+  background: rgba(255, 167, 38, 0.16);
+  color: #ffa726;
+  border: 1px solid rgba(255, 167, 38, 0.4);
+}
+.badgeInfo {
+  background: rgba(66, 165, 245, 0.16);
+  color: #64b5f6;
+  border: 1px solid rgba(66, 165, 245, 0.4);
+}
+.badgeOk {
+  background: rgba(0, 230, 118, 0.14);
+  color: var(--accent);
+  border: 1px solid rgba(0, 230, 118, 0.35);
+}
+
+/* ---------- Formulaire de signalement ---------- */
+.reportForm,
+.panelForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg-tile);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+.reportTitle,
+.panelTitle {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.fieldLabel select,
+.fieldLabel textarea {
+  background: var(--bg-tile);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+}
+.reportStatus,
+.panelStatus {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  min-height: 1em;
+}
+.okText {
+  color: var(--accent);
+}
+.smallBtn {
+  padding: 10px 18px;
+  font-size: 0.85rem;
+  box-shadow: none;
+}
+.wideBtn {
+  width: 100%;
+  padding: 12px 18px;
+  font-size: 0.85rem;
+}
+
+/* ---------- Panneau de compte (accueil) ---------- */
+.accountPanel {
+  padding: 0 20px 20px 20px;
+}
+.dangerLink {
+  color: #ff6b6b;
+}
+
+/* ---------- Entree : etape du code ---------- */
+.gateIdentity {
+  margin: 0 0 4px 0;
+  color: var(--accent);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.gateFootnote {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  text-align: center;
+  margin: 18px 0 0 0;
+}
+
+/* ---------- Administration ---------- */
+.reportCard,
+.userRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.userRow {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.reportHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.reportHead .reportType {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.reportSession {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.reportMeta {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+}
+.reportMotif {
+  margin: 0;
+  color: #ccc;
+  font-size: 0.8rem;
+  font-style: italic;
+}
+.adminActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.adminButtons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.inlineField {
+  max-width: 220px;
+}
+.adminScreen #adminList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px 30px 20px;
+}
+.adminScreen #adminUnlock {
+  padding: 20px;
+}
+/* Deja dans .historySection, qui porte les marges laterales. */
+.profileScreen #sessionList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 30px;
+}

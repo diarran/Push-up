@@ -1,0 +1,258 @@
+import { fetchUserSessions, describeHistoriqueError } from "../../db/historique.js";
+import {
+  fetchReportsForSessions,
+  reportSession,
+  TYPE_RECALCUL,
+  TYPE_ANNULATION
+} from "../../db/signalements.js";
+import { sessionVideoUrl } from "../../db/videos.js";
+import { formatShortDate, formatDuration } from "../../core/date.js";
+import { escapeHtml } from "../escapeHtml.js";
+import { renderTopNav } from "../nav.js";
+
+const SESSION_LIMIT = 40;
+
+// Profil detaille d'un membre, ouvert depuis le classement.
+//
+// Le but n'est pas seulement d'admirer les scores : c'est de pouvoir
+// verifier une performance. Chaque seance affiche donc sa duree et, quand
+// elle existe, la video enregistree pendant la seance (camera + squelette
+// detecte). Si la video ne colle pas au score, n'importe quel membre peut
+// signaler la seance ; c'est l'administrateur qui tranche.
+export function renderProfileScreen(root, ctx) {
+  const viewer = ctx.getUsername();
+  const target = ctx.getProfileTarget() || viewer;
+  const isSelf = target === viewer;
+
+  const el = document.createElement("div");
+  el.className = "screen profileScreen";
+  el.appendChild(renderTopNav("leaderboard", ctx));
+
+  el.insertAdjacentHTML(
+    "beforeend",
+    `
+    <div class="profileHeader">
+      <button id="backBtn" class="linkBtn backLink">Retour au classement</button>
+      <h1>${escapeHtml(target)}</h1>
+      <p class="subtitle">${isSelf ? "Ton profil" : "Profil du membre"}</p>
+    </div>
+    <div class="statsRow">
+      <div class="statTile"><div class="statValue" id="pTotal">-</div><div class="statLabel">Repetitions</div></div>
+      <div class="statTile"><div class="statValue" id="pSessions">-</div><div class="statLabel">Seances</div></div>
+      <div class="statTile"><div class="statValue" id="pBest">-</div><div class="statLabel">Record</div></div>
+    </div>
+    <div class="statsRow">
+      <div class="statTile"><div class="statValue" id="pTime">-</div><div class="statLabel">Temps total</div></div>
+      <div class="statTile"><div class="statValue" id="pAvg">-</div><div class="statLabel">Moyenne / seance</div></div>
+      <div class="statTile"><div class="statValue" id="pVideos">-</div><div class="statLabel">Avec video</div></div>
+    </div>
+    <div class="historySection">
+      <h2>Seances</h2>
+      <p class="fieldHint">${
+        isSelf
+          ? "Chaque seance filmee peut etre revue ici. C'est ce que les autres verront s'ils contestent un score."
+          : "Ouvre la video pour verifier une performance. Un doute ? Signale la seance, l'administrateur tranchera."
+      }</p>
+      <div id="sessionList"><p class="emptyState">Chargement</p></div>
+    </div>
+  `
+  );
+
+  root.appendChild(el);
+
+  const listEl = el.querySelector("#sessionList");
+  el.querySelector("#backBtn").addEventListener("click", () => ctx.navigate("leaderboard"));
+
+  let sessions = [];
+  let reportsBySession = new Map();
+
+  function statusBadge(session) {
+    const reports = reportsBySession.get(session.id) || [];
+    const pending = reports.filter((r) => r.status === "en_attente");
+    if (pending.length > 0) {
+      return `<span class="badge badgeWarn">Signalee (${pending.length})</span>`;
+    }
+    if (session.originalReps !== null && session.originalReps !== undefined) {
+      return `<span class="badge badgeInfo">Recalculee (${session.originalReps} au depart)</span>`;
+    }
+    const refused = reports.some((r) => r.status === "refuse");
+    if (refused) return '<span class="badge badgeOk">Signalement rejete</span>';
+    return "";
+  }
+
+  function renderSession(session) {
+    const url = sessionVideoUrl(session.videoPath);
+    const duration = session.durationSeconds != null ? formatDuration(session.durationSeconds) : "duree inconnue";
+    const cadence =
+      session.durationSeconds > 0 && session.reps > 0
+        ? `${(session.reps / (session.durationSeconds / 60)).toFixed(1)} / min`
+        : "-";
+
+    return `
+      <div class="sessionCard" data-session="${escapeHtml(session.id)}">
+        <div class="sessionTop">
+          <div>
+            <div class="hDate">${escapeHtml(formatShortDate(session.performedOn))}</div>
+            <div class="hMeta">${escapeHtml(session.exerciseLabel || "")} - ${escapeHtml(duration)} - ${escapeHtml(cadence)}</div>
+          </div>
+          <div class="hReps">${session.reps}</div>
+        </div>
+        ${statusBadge(session)}
+        <div class="sessionActions">
+          ${
+            url
+              ? `<button class="ghostPill" data-action="video">Voir la video</button>`
+              : `<span class="noVideoTag">Aucune video</span>`
+          }
+          ${
+            isSelf
+              ? ""
+              : `<button class="ghostPill" data-action="report">Signaler</button>`
+          }
+        </div>
+        <div class="videoSlot" hidden></div>
+        <div class="reportSlot" hidden></div>
+      </div>`;
+  }
+
+  function toggleVideo(card, session) {
+    const slot = card.querySelector(".videoSlot");
+    if (!slot.hidden) {
+      // Referme et coupe la lecture : sur telephone, plusieurs videos
+      // ouvertes en meme temps saturent vite la memoire.
+      slot.hidden = true;
+      slot.innerHTML = "";
+      card.querySelector('[data-action="video"]').textContent = "Voir la video";
+      return;
+    }
+
+    const url = sessionVideoUrl(session.videoPath);
+    slot.innerHTML = `
+      <video class="sessionVideo" controls playsinline preload="metadata" src="${escapeHtml(url)}"></video>
+      <p class="fieldHint">Le squelette vert est ce que le compteur a reellement suivi.</p>`;
+    slot.hidden = false;
+    card.querySelector('[data-action="video"]').textContent = "Masquer la video";
+  }
+
+  function toggleReport(card, session) {
+    const slot = card.querySelector(".reportSlot");
+    if (!slot.hidden) {
+      slot.hidden = true;
+      slot.innerHTML = "";
+      return;
+    }
+
+    slot.innerHTML = `
+      <form class="reportForm">
+        <p class="reportTitle">Signaler cette seance</p>
+        <label class="fieldLabel">
+          Demande
+          <select class="reportType">
+            <option value="${TYPE_RECALCUL}">Recalculer les repetitions</option>
+            <option value="${TYPE_ANNULATION}">Annuler la seance</option>
+          </select>
+        </label>
+        <label class="fieldLabel reportRepsField">
+          Nombre de repetitions que tu comptes
+          <input type="number" class="reportReps" min="0" max="${Math.max(0, session.reps)}" value="${Math.max(0, session.reps - 1)}" />
+        </label>
+        <label class="fieldLabel">
+          Motif
+          <textarea class="reportMotif" maxlength="500" rows="2" placeholder="Pompes pas assez basses, coudes pas plies..."></textarea>
+        </label>
+        <button type="submit" class="primaryBtn smallBtn">Envoyer le signalement</button>
+        <p class="reportStatus"></p>
+      </form>`;
+    slot.hidden = false;
+
+    const form = slot.querySelector(".reportForm");
+    const typeEl = slot.querySelector(".reportType");
+    const repsField = slot.querySelector(".reportRepsField");
+    const statusEl = slot.querySelector(".reportStatus");
+
+    typeEl.addEventListener("change", () => {
+      repsField.hidden = typeEl.value !== TYPE_RECALCUL;
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const submitBtn = form.querySelector("button[type=submit]");
+      submitBtn.disabled = true;
+      statusEl.textContent = "Envoi...";
+      statusEl.className = "reportStatus";
+
+      try {
+        await reportSession({
+          sessionId: session.id,
+          author: viewer,
+          type: typeEl.value,
+          motif: slot.querySelector(".reportMotif").value,
+          proposedReps: typeEl.value === TYPE_RECALCUL ? Number(slot.querySelector(".reportReps").value) : null
+        });
+        statusEl.textContent = "Signalement envoye. L'administrateur tranchera.";
+        statusEl.className = "reportStatus okText";
+        submitBtn.hidden = true;
+        await load();
+      } catch (err) {
+        statusEl.textContent = describeHistoriqueError(err);
+        statusEl.className = "reportStatus errorText";
+        submitBtn.disabled = false;
+      }
+    });
+  }
+
+  function renderList() {
+    if (sessions.length === 0) {
+      listEl.innerHTML = '<p class="emptyState">Aucune seance enregistree.</p>';
+      return;
+    }
+
+    listEl.innerHTML = sessions.map(renderSession).join("");
+
+    listEl.querySelectorAll(".sessionCard").forEach((card) => {
+      const session = sessions.find((s) => s.id === card.dataset.session);
+      if (!session) return;
+      const videoBtn = card.querySelector('[data-action="video"]');
+      const reportBtn = card.querySelector('[data-action="report"]');
+      if (videoBtn) videoBtn.addEventListener("click", () => toggleVideo(card, session));
+      if (reportBtn) reportBtn.addEventListener("click", () => toggleReport(card, session));
+    });
+  }
+
+  function renderStats() {
+    const total = sessions.reduce((sum, s) => sum + s.reps, 0);
+    const timed = sessions.filter((s) => s.durationSeconds != null);
+    const totalTime = timed.reduce((sum, s) => sum + s.durationSeconds, 0);
+    const best = sessions.reduce((max, s) => Math.max(max, s.reps), 0);
+    const withVideo = sessions.filter((s) => s.videoPath).length;
+
+    el.querySelector("#pTotal").textContent = total;
+    el.querySelector("#pSessions").textContent = sessions.length;
+    el.querySelector("#pBest").textContent = best;
+    el.querySelector("#pTime").textContent = timed.length > 0 ? formatDuration(totalTime) : "-";
+    el.querySelector("#pAvg").textContent = sessions.length > 0 ? Math.round(total / sessions.length) : 0;
+    el.querySelector("#pVideos").textContent = `${withVideo}/${sessions.length}`;
+  }
+
+  async function load() {
+    try {
+      sessions = await fetchUserSessions(target, SESSION_LIMIT);
+      // Les signalements sont un bonus d'affichage : leur absence (migration
+      // 0003 pas executee) ne doit pas vider la liste des seances.
+      try {
+        reportsBySession = await fetchReportsForSessions(sessions.map((s) => s.id));
+      } catch (err) {
+        console.warn("Signalements non charges", err);
+        reportsBySession = new Map();
+      }
+      renderStats();
+      renderList();
+    } catch (err) {
+      listEl.innerHTML = `<p class="errorText">${escapeHtml(describeHistoriqueError(err))}</p>`;
+    }
+  }
+
+  load();
+
+  return () => {};
+}

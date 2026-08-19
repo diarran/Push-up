@@ -11,12 +11,16 @@ suite.
 
 ## Parcours utilisateur
 
-`gate` (pseudo ; mot de passe de groupe desactive temporairement, voir
-`PASSCODE_ENABLED` dans `src/ui/screens/gate.js`) -> `home` (stats,
-historique) -> `tutorial` (demonstration 3D animee des pompes) ->
-`session` (comptage a la camera, flash plein ecran a chaque repetition
-validee, chrono, bascule camera avant/arriere) -> recapitulatif de fin de
-seance -> retour a `home`.
+`gate` (pseudo, puis code PIN ; mot de passe de groupe desactive
+temporairement, voir `PASSCODE_ENABLED` dans `src/ui/screens/gate.js`) ->
+`home` (stats, historique, gestion du compte) -> `tutorial` (demonstration
+3D animee des pompes) -> `session` (comptage a la camera, enregistrement
+video, flash plein ecran a chaque repetition validee, chrono, bascule
+camera avant/arriere) -> recapitulatif de fin de seance -> retour a `home`.
+
+Le classement mene au profil detaille de chaque membre (`profile`) :
+seances, durees, videos, et bouton de signalement. Le compte `Admin` a en
+plus l'ecran `admin`, ou les signalements sont tranches.
 
 ## Parcours reduit aux pompes
 
@@ -64,10 +68,13 @@ durcissement du moteur de pose) est dans `docs/TDD-v4.md`.
   dans `src/audio/coach.js`, priorite a la fiabilite du comptage). Le code
   reste en place (Web Speech API, aucun service tiers) pour une
   reactivation future
-- **Backend** : Supabase (Postgres), deux tables (`utilisateurs`,
-  `historique`) en lecture/ecriture ouvertes. Pas de comptes individuels :
-  un mot de passe de groupe unique, verifie uniquement cote client, filtre
-  l'entree dans l'application
+- **Backend** : Supabase (Postgres). Les tables de donnees
+  (`utilisateurs`, `historique`, `signalements`) restent en
+  lecture/ecriture ouvertes ; ce qui doit etre protege (code PIN d'un
+  compte, decisions d'administration) passe par des fonctions
+  `security definer` verifiees par la base. Voir "Comptes et codes PIN"
+- **Videos de seance** : Supabase Storage (bucket `seances`), une video par
+  seance enregistree depuis le canvas. Voir "Verification des performances"
 - **PWA** : `vite-plugin-pwa` (manifest deja fourni dans `public/`, service
   worker genere automatiquement au build)
 
@@ -79,14 +86,17 @@ src/
     rig/          rig anime pour les tutoriels 3D (buildRig, animationClips,
                   animateRig) - voir "Tutoriels animes"
     geometry.js, landmarks.js, poseEngine.js, cameraStream.js, date.js,
-    withTimeout.js
+    withTimeout.js, sessionRecorder.js (video de seance)
   biomechanics/   taxonomie des muscles + regles d'equilibre (antagonistes)
   workout/        generateur de seance + agregations de progression
                   (totaux quotidiens, par exercice, record, streak)
   audio/          coach vocal (file d'attente, anti-spam, transitions)
   lib/            client Supabase
+  social/         trash talk : piques choisies selon la position au
+                  classement (module pur, teste)
   auth/           gestion locale du pseudo + verification du mot de passe
-  db/             acces direct aux tables Supabase (historique, classement)
+  db/             acces Supabase : historique/classement, comptes et codes
+                  PIN (comptes.js), signalements, videos (Storage)
   ui/
     threeBody/    corps 3D (Three.js) : loadAnatomyModel.js charge le
                   maillage anatomique, buildBody.js pose les volumes de
@@ -94,8 +104,9 @@ src/
                   hologramme partage entre le ciblage et les tutoriels
     charts/       graphiques SVG maison (courbe, barres), sans dependance
     screens/      gate, home, targeting, tutorial, workoutSetup, session,
-                  progress, leaderboard
-supabase/migrations/   0001_init.sql (schema) + 0002_duree_seances.sql
+                  progress, leaderboard, profile, admin
+supabase/migrations/   0001_init.sql (schema), 0002_duree_seances.sql,
+                  0003_comptes_signalements_videos.sql
 public/       manifest PWA, icones, models/ (corps 3D glTF + animation FBX)
 docs/TDD-v4.md   document de conception de la refonte v4
 ```
@@ -225,34 +236,121 @@ independamment de Supabase. La requete (`fetchUserSessionsRange` dans
 `src/db/historique.js`) est protegee par le meme garde-fou `withTimeout`
 que le reste de l'application.
 
-## Pourquoi pas de comptes individuels
+## Comptes et codes PIN
 
-Le groupe compte une dizaine de personnes maximum. Une authentification par
-email (inscription, confirmation, mot de passe oublie) serait une charge
-inutile pour cet usage. A la place :
+Le groupe compte une dizaine de personnes maximum : une authentification
+par email (inscription, confirmation, mot de passe oublie) serait une
+charge inutile. Il n'y a donc toujours ni email ni mot de passe complet,
+mais un pseudo ne suffisait plus : n'importe qui pouvait entrer sous le
+pseudo d'un autre et gonfler son score. Depuis la migration 0003 :
 
-- un **mot de passe de groupe** unique, partage entre les membres, verifie
-  uniquement cote client (comparaison avec `VITE_GROUP_PASSCODE`) avant
-  d'entrer dans l'application
-- un **pseudo libre**, saisi une fois et memorise sur l'appareil
+- a la **creation** d'un pseudo, l'application demande un code de 4 a 6
+  chiffres, saisi deux fois
+- aux **connexions suivantes**, le code est redemande
+- le code est **hache par la base** (`crypt` / `gen_salt('bf')`, pgcrypto)
+  et stocke dans `codes_acces`, table sans aucune policy RLS : le client ne
+  peut ni la lire ni l'ecrire. Les seuls acces sont les fonctions
+  `security definer` `definir_code_pin`, `verifier_code_pin`,
+  `modifier_code_pin`. Le hash ne sort jamais de la base
+- un compte cree avant cette migration n'a pas de code : la premiere
+  personne qui entre sous ce pseudo se voit proposer d'en poser un
 
-Limite assumee, deliberement : les tables `utilisateurs` et `historique`
-sont en lecture/ecriture ouvertes (policies RLS `using (true)`), pour que
-le classement reste simple et instantane entre les dix membres du groupe.
-La cle publique Supabase (`anon key`) est de toute facon visible dans le
-code cote client, comme pour toute application front-end statique ; le mot
-de passe de groupe est donc une barriere pour decourager un inconnu qui
-tomberait sur le lien de l'application, pas une protection de niveau
-entreprise. Si ce niveau de protection devient insuffisant un jour (fuite
-du lien, groupe qui grandit), il faudra revenir a un acces verifie cote
-serveur (fonctions Postgres `security definer`, comme dans une version
-precedente de ce depot).
+Un membre peut **changer son code** ou **supprimer son compte** depuis
+l'accueil. La suppression demande le code et la ressaisie du pseudo, puis
+efface le compte, tout son historique (cascade) et ses videos. C'est la
+reponse aux fautes de frappe et aux comptes crees par erreur.
+
+### Administrateur
+
+Le compte de moderation est le pseudo **`Admin`**, code **`2424`** a
+l'installation (cree par la migration 0003 ; a changer depuis
+l'application, "Changer mon code"). Il est marque `est_admin` en base.
+
+Ce que ce compte peut faire — trancher un signalement, supprimer une
+seance, supprimer un compte — n'est pas garde par l'interface mais par la
+base : chaque operation renvoie le code administrateur a une fonction
+`security definer` qui le verifie (`est_code_admin`). Forcer l'affichage de
+l'ecran d'administration depuis la console ne donne donc que des refus. Le
+code n'est jamais stocke sur l'appareil : il est demande a chaque visite de
+l'ecran, garde en memoire vive, et oublie au rechargement.
+
+### Ce qui reste ouvert, deliberement
+
+Les tables `utilisateurs`, `historique` et `signalements` restent en
+lecture/ecriture ouvertes (policies RLS `using (true)`), pour que le
+classement reste simple et instantane. La cle publique Supabase
+(`anon key`) est de toute facon visible dans le code cote client, comme
+pour toute application front-end statique. Concretement : un membre
+determine peut toujours inserter une seance bidon en tapant directement
+dans l'API. Ce qu'il ne peut pas faire, c'est entrer sous le pseudo d'un
+autre ni s'auto-innocenter d'un signalement. C'est le niveau de confiance
+attendu dans un groupe d'amis ; si le lien fuite ou si le groupe grandit,
+il faudra passer les ecritures elles aussi par des fonctions verifiees.
+
+## Verification des performances
+
+Un compteur automatique se trompe, et un ami peut tricher (pompes a moitie
+descendues, telephone secoue). Trois briques repondent a ca.
+
+**Le profil detaille.** Le classement est cliquable : chaque pseudo ouvre
+`src/ui/screens/profile.js`, qui affiche les totaux, le temps total, la
+moyenne par seance, puis la liste des seances avec pour chacune la date, le
+nombre de repetitions, la duree et la cadence (repetitions par minute) — une
+cadence aberrante est deja un indice.
+
+**La video.** Pendant la seance, `src/core/sessionRecorder.js` enregistre le
+**canvas**, pas le flux camera brut : la video montre donc a la fois la
+personne et le squelette detecte, c'est-a-dire ce que le compteur a
+reellement suivi. Reglages volontairement modestes (15 images/s, 800 kbit/s)
+pour qu'une seance reste de l'ordre de quelques megaoctets et parte depuis un
+telephone en 4G. La video est deposee dans le bucket Storage `seances` avant
+l'insertion de la seance, pour que son chemin parte avec la ligne : la table
+`historique` n'accepte que des insertions, jamais de mise a jour. Un echec
+d'envoi ne fait jamais perdre le score : la seance est enregistree sans
+video.
+
+**Les signalements.** Depuis le profil d'un autre membre, "Signaler" permet
+de demander un **recalcul** (en proposant un autre nombre de repetitions) ou
+une **annulation**, avec un motif. Le signalement part dans la table
+`signalements` et apparait sur l'ecran Administration. L'administrateur voit
+la seance, la video, la demande, puis accepte ou refuse :
+
+- recalcul accepte : `repetitions` est remplace, l'ancienne valeur est
+  conservee dans `repetitions_initiales` (le profil affiche alors
+  "Recalculee")
+- annulation acceptee : `annulee` passe a vrai. La seance disparait du
+  classement et des statistiques mais reste en base, comme trace de la
+  decision
+
+## Trash talk
+
+`src/social/trashTalk.js` affiche une pique selon la position au
+classement : sur l'accueil (sur la journee), sur le classement (selon
+l'onglet) et au recapitulatif de fin de seance (selon la seance, avec une
+ligne speciale quand un record tombe).
+
+Le module est **pur** : il recoit un classement deja charge et rend une
+phrase, sans DOM ni reseau. C'est ce qui permet de le tester
+(`test/trashTalk.test.mjs`) sans navigateur. Les tests ne portent pas sur
+le texte des piques, qui changera, mais sur le classement des situations
+(`domination`, `menace`, `leader`, `proche`, `distance`, `largue`,
+`dernier`, `zero`, `aucun`) : afficher une phrase de vainqueur a quelqu'un
+qui est dernier serait ridicule. Les seuils sont deux constantes en haut du
+fichier (`ECART_SERRE`, `ECART_LARGE`).
+
+Le ton est celui d'un groupe d'amis qui se chambre : ca tape fort, mais ca
+ne vise que la flemme et les scores. Pour l'adoucir ou le durcir, il suffit
+de reecrire le catalogue `LIGNES` ; la structure ne bouge pas.
 
 ## Mise en place de Supabase
 
 1. Creer un projet gratuit sur supabase.com.
 2. Ouvrir l'editeur SQL du projet et executer, dans l'ordre, chaque fichier
-   de `supabase/migrations/` (`0001_init.sql` puis `0002_duree_seances.sql`).
+   de `supabase/migrations/` (`0001_init.sql`, `0002_duree_seances.sql`,
+   puis `0003_comptes_signalements_videos.sql`). La migration 0003 cree
+   aussi le bucket Storage `seances` ; si votre projet refuse d'ecrire dans
+   le schema `storage`, creez-le a la main (Storage > New bucket > nom
+   `seances`, case "Public bucket" cochee).
 3. Dans Project Settings > API, recuperer l'URL du projet et la cle
    publique (`anon public key`).
 
@@ -370,6 +468,18 @@ depend.
 Le recapitulatif de fin de seance distingue les deux cas : "Base hors
 ligne : seance non enregistree" (reessayer plus tard) ou "Enregistrement
 refuse : ..." (corriger la base, typiquement une migration oubliee).
+
+Deux consequences pour les ajouts de la migration 0003 :
+
+- **codes PIN** : si la base est injoignable, ou si la migration 0003 n'a
+  pas ete executee (`PGRST202`, fonction inconnue), l'ecran d'entree
+  n'exige aucun code et laisse entrer au pseudo seul, comme avant. Une
+  panne de reseau ne doit pas empecher de compter des pompes.
+- **videos et signalements** : les colonnes et la table manquantes sont
+  detectees a la premiere requete (`src/db/execute.js`,
+  `isMissingColumn` / `isMissingFunction`), la requete est rejouee sans
+  elles, et les ecrans masquent simplement ce qui n'existe pas. Meme
+  mecanisme que pour `duree_secondes` en 0002.
 
 ## Corps 3D
 
@@ -492,9 +602,32 @@ le seul levier logiciel restant pour un cadrage plus large.
 - Le pseudo n'est pas normalise : deux saisies differentes (majuscules,
   espaces) creent deux entrees distinctes dans le classement. Chacun doit
   garder le meme pseudo.
-- Les tables Supabase sont ouvertes en lecture/ecriture : voir la section
-  "Pourquoi pas de comptes individuels" ci-dessus pour le detail du
-  compromis et comment revenir en arriere si besoin.
+- Les tables de donnees Supabase restent ouvertes en ecriture : voir
+  "Ce qui reste ouvert, deliberement" ci-dessus. Une seance peut donc
+  toujours etre fabriquee en tapant directement dans l'API ; le code PIN
+  protege l'identite, pas les chiffres.
+- **Aucune recuperation de code PIN oublie.** Il n'y a ni email ni
+  telephone pour renvoyer quoi que ce soit. Le seul recours est
+  l'administrateur, qui peut supprimer le compte (l'historique part avec).
+  Ajouter une remise a zero du code par l'administrateur serait le
+  complement naturel : la fonction `modifier_code_pin` existe deja, il
+  suffirait d'une variante acceptant le code administrateur.
+- **Code PIN a 4 chiffres = 10 000 combinaisons.** Rien ne limite le nombre
+  d'essais cote base. Contre un ami curieux qui tape a la main c'est
+  suffisant ; contre un script, non. Une limitation par tentatives dans
+  `verifier_code_pin` serait a ajouter si le lien sortait du groupe.
+- **Videos non transcodees et jamais purgees automatiquement.** Chaque
+  seance filmee pese quelques megaoctets dans le bucket `seances` (1 Go
+  offert sur le plan gratuit Supabase). Rien ne supprime les vieilles
+  videos : le menage se fait a la main depuis l'ecran Administration
+  (suppression d'une seance) ou en supprimant un compte.
+- **Enregistrement video absent sur les navigateurs sans `MediaRecorder`
+  ni `canvas.captureStream`.** La seance se deroule alors normalement,
+  simplement sans video (`isRecordingSupported()` dans
+  `src/core/sessionRecorder.js`), et elle ne pourra pas etre verifiee.
+- Un signalement peut etre depose autant de fois qu'on veut sur la meme
+  seance : rien n'empeche le harcelement d'un membre. Vu la taille du
+  groupe, la moderation humaine suffit.
 - Pas de recuperation d'acces si le mot de passe de groupe change : il faut
-  alors redemander a chacun de le ressaisir (bouton "Changer de pseudo ou
-  de code" sur l'ecran d'accueil).
+  alors redemander a chacun de le ressaisir (bouton "Changer de pseudo" sur
+  l'ecran d'accueil).
