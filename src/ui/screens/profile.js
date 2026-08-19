@@ -6,6 +6,14 @@ import {
   TYPE_RECALCUL,
   TYPE_ANNULATION
 } from "../../db/signalements.js";
+import {
+  fetchValidationsForSessions,
+  validateSession,
+  isValidationSupported,
+  isSessionClosed,
+  VALIDATIONS_REQUISES,
+  DELAI_CLOTURE_JOURS
+} from "../../db/validations.js";
 import { sessionVideoUrl } from "../../db/videos.js";
 import { formatShortDate, formatDuration } from "../../core/date.js";
 import { escapeHtml } from "../escapeHtml.js";
@@ -66,6 +74,23 @@ export function renderProfileScreen(root, ctx) {
 
   let sessions = [];
   let reportsBySession = new Map();
+  let validationsBySession = new Map();
+
+  function validatorsOf(session) {
+    return validationsBySession.get(session.id) || [];
+  }
+
+  function hasPendingReport(session) {
+    return (reportsBySession.get(session.id) || []).some((r) => r.status === "en_attente");
+  }
+
+  function closedState(session) {
+    return isSessionClosed({
+      createdAt: session.createdAt,
+      validationCount: validatorsOf(session).length,
+      hasPendingReport: hasPendingReport(session)
+    });
+  }
 
   function statusBadge(session) {
     const reports = reportsBySession.get(session.id) || [];
@@ -83,7 +108,35 @@ export function renderProfileScreen(root, ctx) {
     }
     const refused = reports.some((r) => r.status === "refuse");
     if (refused) return '<span class="badge badgeOk">Signalement rejete</span>';
+    if (closedState(session)) return '<span class="badge badgeOk">Validee - definitive</span>';
     return "";
+  }
+
+  // Ligne de validation : qui a valide, combien il en manque, et le bouton
+  // pour ajouter sa voix. Absente sur ses propres seances (on ne valide pas
+  // sa performance) et quand la migration 0005 manque.
+  function validationRow(session) {
+    if (!isValidationSupported() || session.cancelled) return "";
+
+    const validateurs = validatorsOf(session);
+    const dejaValide = validateurs.includes(viewer);
+    const close = closedState(session);
+
+    const compte = `${Math.min(validateurs.length, VALIDATIONS_REQUISES)} / ${VALIDATIONS_REQUISES} validation${
+      VALIDATIONS_REQUISES > 1 ? "s" : ""
+    }`;
+    const noms = validateurs.length > 0 ? ` (${escapeHtml(validateurs.join(", "))})` : "";
+
+    return `
+      <div class="validationRow">
+        <span class="validationCount">${compte}${noms}</span>
+        ${
+          isSelf || dejaValide || close
+            ? ""
+            : `<button class="ghostPill" data-action="validate">Je valide</button>`
+        }
+        ${dejaValide ? '<span class="validationDone">Tu as valide</span>' : ""}
+      </div>`;
   }
 
   function renderSession(session) {
@@ -104,17 +157,26 @@ export function renderProfileScreen(root, ctx) {
           <div class="hReps">${session.reps}</div>
         </div>
         ${statusBadge(session)}
+        ${validationRow(session)}
         <div class="sessionActions">
           ${
             url
               ? `<button class="ghostPill" data-action="video">Voir la video</button>`
-              : `<span class="noVideoTag">Aucune video</span>`
+              : `<span class="noVideoTag">${
+                  // Une video effacee par la purge et une seance jamais
+                  // filmee ne veulent pas dire la meme chose : la premiere
+                  // a bien existe et a fait son office.
+                  session.videoPurged
+                    ? `Video effacee (seance close apres ${DELAI_CLOTURE_JOURS} jours)`
+                    : "Aucune video"
+                }</span>`
           }
           ${
-            // Pas de bouton sur ses propres seances, ni quand la migration
-            // 0003 manque : proposer une action qui echouera a coup sur ne
-            // sert qu'a afficher une erreur.
-            isSelf || session.cancelled || !isModerationSupported()
+            // Pas de bouton sur ses propres seances, sur une seance close
+            // (elle n'est plus contestable), ni quand la migration 0003
+            // manque : proposer une action qui echouera a coup sur ne sert
+            // qu'a afficher une erreur.
+            isSelf || session.cancelled || closedState(session) || !isModerationSupported()
               ? ""
               : `<button class="ghostPill" data-action="report">Signaler</button>`
           }
@@ -219,6 +281,34 @@ export function renderProfileScreen(root, ctx) {
     });
   }
 
+  // Comme pour le signalement : on met a jour la carte sur place plutot que
+  // de reconstruire la liste, pour que le retour reste lisible.
+  async function onValidate(card, session, button) {
+    button.disabled = true;
+    button.textContent = "Envoi...";
+    try {
+      await validateSession(session.id, viewer);
+
+      const validateurs = validatorsOf(session);
+      if (!validateurs.includes(viewer)) validateurs.push(viewer);
+      validationsBySession.set(session.id, validateurs);
+
+      const row = card.querySelector(".validationRow");
+      if (row) row.outerHTML = validationRow(session);
+      const badge = card.querySelector(".badge");
+      const nouveau = statusBadge(session);
+      if (badge) badge.outerHTML = nouveau;
+      else if (nouveau) card.querySelector(".sessionTop").insertAdjacentHTML("afterend", nouveau);
+    } catch (err) {
+      button.disabled = false;
+      button.textContent = "Je valide";
+      card.insertAdjacentHTML(
+        "beforeend",
+        `<p class="reportStatus errorText">${escapeHtml(describeHistoriqueError(err))}</p>`
+      );
+    }
+  }
+
   function renderList() {
     if (sessions.length === 0) {
       listEl.innerHTML = '<p class="emptyState">Aucune seance enregistree.</p>';
@@ -232,8 +322,10 @@ export function renderProfileScreen(root, ctx) {
       if (!session) return;
       const videoBtn = card.querySelector('[data-action="video"]');
       const reportBtn = card.querySelector('[data-action="report"]');
+      const validateBtn = card.querySelector('[data-action="validate"]');
       if (videoBtn) videoBtn.addEventListener("click", () => toggleVideo(card, session));
       if (reportBtn) reportBtn.addEventListener("click", () => toggleReport(card, session));
+      if (validateBtn) validateBtn.addEventListener("click", () => onValidate(card, session, validateBtn));
     });
   }
 
@@ -262,14 +354,22 @@ export function renderProfileScreen(root, ctx) {
       // doit pouvoir constater la decision, pas voir une seance disparaitre
       // sans explication.
       sessions = await fetchUserSessions(target, SESSION_LIMIT, { includeCancelled: true });
-      // Les signalements sont un bonus d'affichage : leur absence (migration
-      // 0003 pas executee) ne doit pas vider la liste des seances.
-      try {
-        reportsBySession = await fetchReportsForSessions(sessions.map((s) => s.id));
-      } catch (err) {
-        console.warn("Signalements non charges", err);
-        reportsBySession = new Map();
-      }
+      // Signalements et validations sont un bonus d'affichage : leur
+      // absence (migration 0003 ou 0005 pas executee) ne doit pas vider la
+      // liste des seances.
+      const ids = sessions.map((s) => s.id);
+      const [reports, validations] = await Promise.all([
+        fetchReportsForSessions(ids).catch((err) => {
+          console.warn("Signalements non charges", err);
+          return new Map();
+        }),
+        fetchValidationsForSessions(ids).catch((err) => {
+          console.warn("Validations non chargees", err);
+          return new Map();
+        })
+      ]);
+      reportsBySession = reports;
+      validationsBySession = validations;
       renderStats();
       renderList();
     } catch (err) {

@@ -343,6 +343,52 @@ la seance, la video, la demande, puis accepte ou refuse :
   classement et des statistiques mais reste en base, comme trace de la
   decision
 
+## Duree de vie des videos
+
+Une video ne sert qu'a trancher un desaccord. Passe le moment ou la seance
+peut etre contestee, elle ne fait plus que remplir le Storage (1 Go sur le
+plan gratuit, quelques Mo par seance). Elle a donc une duree de vie.
+
+Une seance est **close** - donc definitive, et sa video effacable - quand :
+
+- **7 jours** ont passe, **ou** **2 membres** l'ont validee explicitement
+  (bouton "Je valide" sur le profil, indisponible sur ses propres seances) ;
+- **et** aucun signalement n'est en attente. Cette derniere condition est
+  la plus importante : sans elle, la video disparaitrait au moment precis
+  ou l'administrateur en a besoin.
+
+Une seance close garde son score et son historique pour toujours. Seule la
+video part, et le profil affiche alors "Video effacee (seance close)"
+plutot que "Aucune video" : la distinction compte, la premiere a bien
+existe et a fait son office.
+
+La regle est ecrite deux fois : en SQL (`seance_close`, migration 0005),
+qui **fait foi** parce qu'un client ne decide pas de ce qu'il a le droit
+d'effacer, et dans `src/core/cloture.js` pour l'affichage. Ce dernier est
+un module pur, donc teste (`test/validations.test.mjs`) ; les seuils sont
+des constantes a garder alignees sur `parametres_cloture()`.
+
+### Purge sans serveur
+
+L'application n'a pas de backend : rien ne tourne tout seul pour faire le
+menage. La purge est donc **opportuniste** (`src/db/purge.js`) : au
+demarrage, au plus une fois par jour et par appareil. Avec un groupe qui
+ouvre l'application regulierement, ca suffit, et ca evite d'ajouter une
+infrastructure (`pg_cron`, fonction planifiee) pour effacer quelques
+fichiers.
+
+Elle se deroule en deux temps, pour qu'une interruption ne perde jamais le
+chemin d'un fichier :
+
+1. la base designe les videos purgeables (`videos_a_purger`)
+2. l'application les supprime du Storage
+3. la base detache **celles qui sont reellement parties**
+   (`confirmer_purge_videos`, qui revalide la condition de cloture)
+
+Une video supprimee mais non confirmee sera simplement reproposee au
+passage suivant. Une video que le Storage a refuse d'effacer n'est jamais
+detachee : detacher son chemin la rendrait introuvable, donc ineffacable.
+
 ## Trash talk
 
 `src/social/trashTalk.js` affiche une pique selon la position au
@@ -368,8 +414,8 @@ de reecrire le catalogue `LIGNES` ; la structure ne bouge pas.
 1. Creer un projet gratuit sur supabase.com.
 2. Ouvrir l'editeur SQL du projet et executer, dans l'ordre, chaque fichier
    de `supabase/migrations/` (`0001_init.sql`, `0002_duree_seances.sql`,
-   `0003_comptes_signalements_videos.sql`, puis
-   `0004_anti_force_brute.sql`). La migration 0003 cree
+   `0003_comptes_signalements_videos.sql`, `0004_anti_force_brute.sql`,
+   puis `0005_validation_et_purge.sql`). La migration 0003 cree
    aussi le bucket Storage `seances` ; si votre projet refuse d'ecrire dans
    le schema `storage`, creez-le a la main (Storage > New bucket > nom
    `seances`, case "Public bucket" cochee).
@@ -656,7 +702,18 @@ le seul levier logiciel restant pour un cadrage plus large.
   `src/core/sessionRecorder.js`), et elle ne pourra pas etre verifiee.
 - Un signalement peut etre depose autant de fois qu'on veut sur la meme
   seance : rien n'empeche le harcelement d'un membre. Vu la taille du
-  groupe, la moderation humaine suffit.
+  groupe, la moderation humaine suffit. A noter qu'un signalement en
+  attente gele la cloture de la seance : en signaler une sans jamais que
+  l'administrateur tranche garde sa video indefiniment.
+- **N'importe qui peut supprimer une video du Storage.** La policy de
+  suppression du bucket est ouverte, parce que la purge et la suppression
+  de compte se font depuis le navigateur, sans serveur pour les faire a
+  leur place. Un tricheur peut donc effacer sa propre preuve. Le profil
+  distingue "video effacee (seance close)" de "aucune video", ce qui rend
+  la manoeuvre visible sans l'empecher.
+- **La purge ne tourne que si quelqu'un ouvre l'application.** Un groupe
+  qui s'arrete un mois laisse ses videos en place jusqu'a la prochaine
+  visite.
 - Pas de recuperation d'acces si le mot de passe de groupe change : il faut
   alors redemander a chacun de le ressaisir (bouton "Changer de pseudo" sur
   l'ecran d'accueil).

@@ -23,8 +23,10 @@ export async function ensureUser(pseudo) {
 // migration passee, tout se remet en place sans toucher au code.
 //   duree_secondes                       -> migration 0002
 //   video_path, annulee, repetitions_...  -> migration 0003
+//   video_purgee                          -> migration 0005
 let durationColumnAvailable = true;
 let moderationColumnsAvailable = true;
+let purgeColumnAvailable = true;
 
 function isMissingDurationColumn(err) {
   return isMissingColumn(err, "duree_secondes");
@@ -50,6 +52,10 @@ function disableMissingColumns(err) {
   }
   if (isMissingModerationColumn(err)) {
     moderationColumnsAvailable = false;
+    return true;
+  }
+  if (isMissingColumn(err, "video_purgee")) {
+    purgeColumnAvailable = false;
     return true;
   }
   return false;
@@ -131,11 +137,13 @@ async function selectSessions(columns, build, { includeCancelled = false } = {})
   for (;;) {
     const avecDuree = durationColumnAvailable;
     const avecModeration = moderationColumnsAvailable;
+    const avecPurge = purgeColumnAvailable;
 
     const cols = [
       ...columns,
       ...(avecDuree ? ["duree_secondes"] : []),
-      ...(avecModeration ? ["video_path", "annulee", "repetitions_initiales"] : [])
+      ...(avecModeration ? ["video_path", "annulee", "repetitions_initiales"] : []),
+      ...(avecPurge ? ["video_purgee"] : [])
     ].join(", ");
 
     let query = supabase.from("historique").select(cols);
@@ -147,7 +155,13 @@ async function selectSessions(columns, build, { includeCancelled = false } = {})
       if (!disableMissingColumns(err)) throw err;
       // Aucun groupe de colonnes n'a change : reessayer donnerait le meme
       // resultat.
-      if (avecDuree === durationColumnAvailable && avecModeration === moderationColumnsAvailable) throw err;
+      if (
+        avecDuree === durationColumnAvailable &&
+        avecModeration === moderationColumnsAvailable &&
+        avecPurge === purgeColumnAvailable
+      ) {
+        throw err;
+      }
     }
   }
 }
@@ -159,6 +173,9 @@ function mapSession(row) {
     exerciseLabel: row.nom_exercice,
     durationSeconds: row.duree_secondes ?? null,
     videoPath: row.video_path ?? null,
+    // Video effacee parce que la seance est close : a distinguer d'une
+    // seance qui n'a jamais eu de video.
+    videoPurged: Boolean(row.video_purgee),
     cancelled: Boolean(row.annulee),
     originalReps: row.repetitions_initiales ?? null,
     performedOn: row.date,

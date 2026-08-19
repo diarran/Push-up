@@ -72,22 +72,26 @@ export function sessionVideoUrl(path) {
 // leve pas d'exception, il renvoie { error }, donc un try/catch seul ne
 // verrait jamais rien.
 //
-// Renvoie le nombre de fichiers effectivement supprimes.
+// Renvoie les chemins reellement supprimes. La purge s'en sert pour ne
+// confirmer que ceux-la : detacher le chemin d'un fichier toujours present
+// le rendrait introuvable, donc impossible a effacer plus tard.
 export async function deleteSessionVideos(paths) {
   const liste = (paths || []).filter(Boolean);
-  if (!isSupabaseConfigured || liste.length === 0) return 0;
+  if (!isSupabaseConfigured || liste.length === 0) return [];
 
   let result;
   try {
     result = await supabase.storage.from(BUCKET).remove(liste);
   } catch (err) {
     console.warn("Videos non supprimees du Storage (reseau)", err);
-    return 0;
+    return [];
   }
 
   if (result.error) {
     console.warn("Videos non supprimees du Storage :", result.error.message);
-    return 0;
+    return [];
   }
-  return (result.data || []).length;
+  // Le Storage renvoie un objet par fichier efface, dont `name` porte le
+  // chemin complet.
+  return (result.data || []).map((row) => row.name).filter(Boolean);
 }

@@ -9,6 +9,7 @@ import { renderSessionScreen } from "./ui/screens/session.js";
 import { renderLeaderboardScreen } from "./ui/screens/leaderboard.js";
 import { renderProgressScreen } from "./ui/screens/progress.js";
 import { renderProfileScreen } from "./ui/screens/profile.js";
+import { schedulePurge } from "./db/purge.js";
 
 const root = document.getElementById("app");
 const voiceCoach = createVoiceCoach();
@@ -132,6 +133,12 @@ function navigate(screen) {
 }
 
 navigate(username ? "home" : "gate");
+
+// Menage des videos de seances closes. L'application n'a pas de serveur :
+// la purge se declenche donc ici, au plus une fois par jour et par
+// appareil, et n'attend rien (elle ne doit ni ralentir ni empecher
+// l'ouverture). Voir src/db/purge.js.
+if (username) schedulePurge();
 
 // L'enregistrement du service worker est gere automatiquement par
 // vite-plugin-pwa (registerType: "autoUpdate", injectRegister: "auto").

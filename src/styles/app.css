@@ -1030,3 +1030,20 @@ button {
   color: #ff6b6b;
   border: 1px solid rgba(211, 47, 47, 0.45);
 }
+
+/* ---------- Validation d'une seance par le groupe ---------- */
+.validationRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.validationCount {
+  color: var(--text-faint);
+  font-size: 0.72rem;
+}
+.validationDone {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
